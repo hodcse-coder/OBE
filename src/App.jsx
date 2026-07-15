@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import logoImage from '../logo.png'
 import visionMissionImage from '../our-vision-mission.png'
-import departmentVisionMissionImage from '../vision-mission.png'
+import departmentVisionMissionImage from '../vision-mission-transparent-v2.png'
+import subjectWiseReportTemplateUrl from '../subject-wise-report-template.xlsx?url'
 import './App.css'
 
 const menuItems = [
@@ -50,7 +51,16 @@ const menuItems = [
       { icon: '\u{1F517}', label: 'Student Course Faculty Mapping', metric: 'Course mapping' },
     ],
   },
-  { icon: '\u{1F4C4}', label: 'Report', metric: 'Reports' },
+  {
+    icon: '\u{1F4C4}',
+    label: 'Report',
+    metric: 'Reports',
+    children: [
+      { icon: '\u{1F3EB}', label: 'All Departments', metric: 'All students' },
+      { icon: '\u{1F500}', label: 'Department Wise', metric: 'By department' },
+      { icon: '\u{1F4D6}', label: 'Course Wise', metric: 'By course' },
+    ],
+  },
   {
     icon: '\u2699',
     label: 'Settings',
@@ -468,7 +478,7 @@ function LoginPage({ onLogin }) {
   )
 }
 
-function DepartmentsPage({ onViewProgrammes }) {
+function DepartmentsPage() {
   const [departments, setDepartments] = useState([])
   const [formData, setFormData] = useState(emptyDepartment)
   const [editingId, setEditingId] = useState(null)
@@ -736,9 +746,6 @@ function DepartmentsPage({ onViewProgrammes }) {
                       >
                         Delete
                       </button>
-                      <button type="button" onClick={onViewProgrammes}>
-                        View Programmes
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -758,7 +765,7 @@ function DepartmentsPage({ onViewProgrammes }) {
   )
 }
 
-function ProgrammesPage({ onViewSemesters, onViewCourses }) {
+function ProgrammesPage() {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [formData, setFormData] = useState(emptyProgramme)
@@ -1055,6 +1062,7 @@ function ProgrammesPage({ onViewSemesters, onViewCourses }) {
                 <th>Programme Code</th>
                 <th>Programme Name</th>
                 <th>Duration</th>
+                <th>Semesters</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1066,6 +1074,7 @@ function ProgrammesPage({ onViewSemesters, onViewCourses }) {
                   <td>{programme.programme_code}</td>
                   <td>{programme.programme_name}</td>
                   <td>{programme.duration_years} Years</td>
+                  <td>{programme.total_semesters}</td>
                   <td>
                     <div className="row-actions">
                       <button type="button" onClick={() => editProgramme(programme)}>
@@ -1077,19 +1086,13 @@ function ProgrammesPage({ onViewSemesters, onViewCourses }) {
                       >
                         Delete
                       </button>
-                      <button type="button" onClick={onViewSemesters}>
-                        View Semesters
-                      </button>
-                      <button type="button" onClick={onViewCourses}>
-                        View Courses
-                      </button>
                     </div>
                   </td>
                 </tr>
               ))}
               {!programmes.length && !isLoading && (
                 <tr>
-                  <td colSpan="6" className="empty-cell">
+                  <td colSpan="7" className="empty-cell">
                     No programmes found.
                   </td>
                 </tr>
@@ -1122,6 +1125,10 @@ function AdmissionBatchManagementPage() {
   const completionYear = admissionYear && durationYears ? admissionYear + durationYears : ''
   const batchCode = completionYear ? `${admissionYear}-${String(completionYear).slice(-2)}` : ''
   const admissionYears = Array.from({ length: 11 }, (_, index) => String(2020 + index))
+  const startingAcademicYears = Array.from({ length: 11 }, (_, index) => {
+    const startYear = 2023 + index
+    return `${startYear}-${String(startYear + 1).slice(-2)}`
+  })
   const sortedBatches = useMemo(
     () => [...batches].sort((first, second) =>
       Number(second.admission_year) - Number(first.admission_year) ||
@@ -1267,7 +1274,7 @@ function AdmissionBatchManagementPage() {
         <label><span>Programme</span><select name="programme_id" value={form.programme_id} onChange={updateForm}><option value="">Select Programme</option>{filteredProgrammes.map((row) => <option key={row.programme_id} value={row.programme_id}>{row.programme_name}</option>)}</select></label>
         <label><span>Duration</span><input value={durationYears ? `${durationYears} Years` : ''} readOnly placeholder="Select Programme" /></label>
         <label><span>Total Semesters</span><input value={totalSemesters || ''} readOnly placeholder="Select Programme" /></label>
-        <label><span>Starting Academic Year</span><select name="starting_academic_year" value={form.starting_academic_year} onChange={updateForm}>{academicYears.map((year) => <option key={year}>{year}</option>)}</select></label>
+        <label><span>Starting Academic Year</span><select name="starting_academic_year" value={form.starting_academic_year} onChange={updateForm}>{startingAcademicYears.map((year) => <option key={year}>{year}</option>)}</select></label>
         <label><span>Admission Year</span><select name="admission_year" value={form.admission_year} onChange={updateForm}>{admissionYears.map((year) => <option key={year}>{year}</option>)}</select></label>
         <label><span>Completion Year</span><input value={completionYear} readOnly /></label>
         <label><span>Batch Code</span><input value={batchCode} readOnly /></label>
@@ -3257,6 +3264,125 @@ function ReportPage() {
       <div className="table-heading"><h4>Available Reports</h4><span>Report module</span></div>
       <div className="empty-cell">Report options will be displayed here.</div>
     </div>
+  </section>
+}
+
+function SubjectWiseReportPage({ reportName = 'Course Wise', user }) {
+  const [departments, setDepartments] = useState([])
+  const [courses, setCourses] = useState([])
+  const [courseOutcomes, setCourseOutcomes] = useState([])
+  const [departmentId, setDepartmentId] = useState('')
+  const [courseId, setCourseId] = useState('')
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const isBranchLocked = ['Department Wise', 'Course Wise'].includes(reportName) && user?.role !== 'Admin'
+  const isCourseLocked = reportName === 'Course Wise' && user?.role !== 'Admin'
+
+  const filteredCourses = useMemo(
+    () => courses.filter((course) => String(course.department_id) === departmentId && course.status !== 'Inactive'),
+    [courses, departmentId],
+  )
+  const selectedDepartment = departments.find((department) => String(department.department_id) === departmentId)
+  const selectedCourse = courses.find((course) => String(course.course_id) === courseId)
+
+  useEffect(() => {
+    if (isBranchLocked) {
+      fetch(`/api/branch-wise-report-options?user_id=${user?.user_id || ''}`)
+        .then(async (response) => {
+          const data = await readResponseJson(response)
+          if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load assigned branch and subjects.')
+          const departmentRows = data?.department ? [data.department] : []
+          setDepartments(departmentRows)
+          setCourses(data?.courses || [])
+          setDepartmentId(data?.department ? String(data.department.department_id) : '')
+          setCourseId(isCourseLocked && data?.courses?.length ? String(data.courses[0].course_id) : '')
+          if (!data?.department) setError('No branch permission is assigned to this faculty login.')
+        })
+        .catch((loadError) => setError(loadError.message))
+      return
+    }
+    Promise.all(['/api/departments', '/api/courses'].map(async (url) => {
+      const response = await fetch(url)
+      const data = await readResponseJson(response)
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load report masters.')
+      return data
+    })).then(([departmentRows, courseRows]) => {
+      setDepartments(departmentRows || [])
+      setCourses(courseRows || [])
+    }).catch((loadError) => setError(loadError.message))
+  }, [isBranchLocked, isCourseLocked, user?.user_id])
+
+  useEffect(() => {
+    if (!courseId) { setCourseOutcomes([]); return }
+    setIsLoading(true)
+    setError('')
+    fetch(`/api/course-outcomes?course_id=${courseId}`)
+      .then(async (response) => {
+        const data = await readResponseJson(response)
+        if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load subject report data.')
+        setCourseOutcomes(data || [])
+      })
+      .catch((loadError) => setError(loadError.message))
+      .finally(() => setIsLoading(false))
+  }, [courseId])
+
+  function setExcelCell(sheet, address, value) {
+    const existingStyle = sheet[address]?.s
+    sheet[address] = { t: typeof value === 'number' ? 'n' : 's', v: value ?? '' }
+    if (existingStyle) sheet[address].s = existingStyle
+  }
+
+  async function exportSubjectWiseReport() {
+    if (!selectedDepartment || !selectedCourse) { setError('Select Department and Course Name before exporting.'); return }
+    setIsExporting(true)
+    setError('')
+    try {
+      const templateResponse = await fetch(subjectWiseReportTemplateUrl)
+      if (!templateResponse.ok) throw new Error('Unable to load the report Excel template.')
+      const workbook = XLSX.read(await templateResponse.arrayBuffer(), { type: 'array', cellStyles: true })
+
+      workbook.SheetNames.forEach((sheetName) => {
+        const sheet = workbook.Sheets[sheetName]
+        setExcelCell(sheet, 'A1', 'Department')
+        setExcelCell(sheet, 'B1', `${selectedDepartment.department_code} - ${selectedDepartment.department_name}`)
+        setExcelCell(sheet, 'A2', 'Course Code')
+        setExcelCell(sheet, 'B2', selectedCourse.course_code)
+        setExcelCell(sheet, 'A3', 'Course Name')
+        setExcelCell(sheet, 'B3', selectedCourse.course_name)
+        sheet['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: XLSX.utils.decode_range(sheet['!ref'] || 'A1:B3').e })
+      })
+
+      const coSheet = workbook.Sheets.COS || XLSX.utils.aoa_to_sheet([])
+      workbook.Sheets.COS = coSheet
+      setExcelCell(coSheet, 'A5', 'CO Code')
+      setExcelCell(coSheet, 'B5', 'CO Statement')
+      courseOutcomes.forEach((row, index) => {
+        setExcelCell(coSheet, `A${index + 6}`, row.co_code || '')
+        setExcelCell(coSheet, `B${index + 6}`, row.co_statement || '')
+      })
+      coSheet['!cols'] = [{ wch: 14 }, { wch: 90 }]
+      coSheet['!ref'] = `A1:B${Math.max(5, courseOutcomes.length + 5)}`
+
+      const reportSlug = reportName.toLowerCase().replace(/\s+/g, '-')
+      XLSX.writeFile(workbook, `${reportSlug}-${selectedCourse.course_code || selectedCourse.course_id}.xlsx`, { cellStyles: true })
+    } catch (exportError) {
+      setError(exportError.message)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  return <section className="department-page">
+    <div className="section-title"><div><p className="eyebrow">Reports</p><h3>{reportName} Report</h3></div></div>
+    <div className="department-form student-master-form">
+      <label><span>Department</span><select value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setCourseId(''); setCourseOutcomes([]) }} disabled={isBranchLocked}><option value="">Select Department</option>{departments.map((row) => <option key={row.department_id} value={row.department_id}>{row.department_code} - {row.department_name}</option>)}</select></label>
+      <label><span>Course Name</span><select value={courseId} onChange={(event) => setCourseId(event.target.value)} disabled={!departmentId || isCourseLocked}><option value="">Select Course Name</option>{filteredCourses.map((row) => <option key={row.course_id} value={row.course_id}>{row.course_code} - {row.course_name}</option>)}</select></label>
+      <div className="form-actions"><button type="button" className="save-button" onClick={exportSubjectWiseReport} disabled={!courseId || isExporting}>{isExporting ? 'Generating Excel...' : reportName === 'Course Wise' ? 'Export to Course Report' : reportName === 'Department Wise' ? 'Export to Department Report' : reportName === 'All Departments' ? 'Export to All Departments Report' : `Export ${reportName} Excel`}</button></div>
+    </div>
+    {isBranchLocked && departmentId && <div className="notice success">{isCourseLocked ? 'Branch and Course Name are fixed from the permissions and subject assignment given to this faculty.' : 'Branch is fixed from Faculty Permission Management. Course Name contains only subjects assigned to this faculty.'}</div>}
+    {error && <div className="notice error">{error}</div>}
+    <div className="table-panel"><div className="table-heading"><h4>{selectedCourse ? `${selectedCourse.course_code} - ${selectedCourse.course_name}` : 'Course Outcomes'}</h4><span>{isLoading ? 'Loading...' : `${courseOutcomes.length} records`}</span></div><div className="table-wrap"><table><thead><tr><th>CO Code</th><th>CO Statement</th><th>Bloom Level</th><th>Target Level</th></tr></thead><tbody>{courseOutcomes.map((row) => <tr key={row.co_id}><td>{row.co_code}</td><td>{row.co_statement}</td><td>{row.bloom_level || row.bloom_code || '-'}</td><td>{row.target_level || '-'}</td></tr>)}{!courseOutcomes.length && !isLoading && <tr><td colSpan="4" className="empty-cell">Select Department and Course Name to load subject data.</td></tr>}</tbody></table></div></div>
   </section>
 }
 
@@ -6400,7 +6526,6 @@ function StudentMasterPage() {
         <div>
           <p className="eyebrow">Student Master</p>
           <h3>Student Master</h3>
-          <p>Dashboard → Master Data → Students</p>
         </div>
       </div>
 
@@ -9138,6 +9263,10 @@ function FacultyLoginMappingPage() {
 }
 
 function FacultyPermissionManagementPage() {
+  const permissionAcademicYears = Array.from({ length: 11 }, (_, index) => {
+    const startYear = 2023 + index
+    return `${startYear}-${String(startYear + 1).slice(-2)}`
+  })
   const permissionKeys = [
     ['can_view', 'View'], ['can_create', 'Create'], ['can_edit', 'Edit'],
     ['can_delete', 'Delete'], ['can_upload', 'Upload'],
@@ -9148,7 +9277,7 @@ function FacultyPermissionManagementPage() {
   const [permissions, setPermissions] = useState([])
   const [userId, setUserId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
-  const [academicYear, setAcademicYear] = useState('2025-26')
+  const [academicYear, setAcademicYear] = useState('2023-24')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -9156,17 +9285,15 @@ function FacultyPermissionManagementPage() {
   const selectedFaculty = useMemo(() => facultyRows.find((row) => String(row.user_id) === userId), [facultyRows, userId])
 
   useEffect(() => {
-    Promise.all(['/api/faculty-login-mapping', '/api/departments'].map(async (url) => {
+    Promise.all(['/api/faculty-management', '/api/departments'].map(async (url) => {
       const response = await fetch(url)
       const data = await readResponseJson(response)
       if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load permission masters.')
       return data
     })).then(([facultyData, departmentData]) => {
-      const activeFaculty = (facultyData || []).filter((row) => row.role !== 'Admin' && row.status === 'Active')
+      const activeFaculty = (facultyData || []).filter((row) => row.status === 'Active' && row.user_id)
       setFacultyRows(activeFaculty)
       setDepartments(departmentData || [])
-      if (activeFaculty.length) setUserId(String(activeFaculty[0].user_id))
-      if (departmentData?.length) setDepartmentId(String(departmentData[0].department_id))
     }).catch((loadError) => setError(loadError.message))
   }, [])
 
@@ -9235,9 +9362,9 @@ function FacultyPermissionManagementPage() {
       <div className="section-title"><div><span>Settings</span><h3>Faculty Permission Management</h3><p>Manage module and action access for each faculty login.</p></div></div>
       <div className="mapping-selector-grid">
         <label><span>Faculty</span><select value={userId} onChange={(event) => setUserId(event.target.value)}><option value="">Select Faculty</option>{facultyRows.map((row) => <option key={row.user_id} value={row.user_id}>{row.faculty_name}</option>)}</select></label>
-        <label><span>Username</span><input value={selectedFaculty?.email?.split('@')[0] || ''} readOnly /></label>
+        <label><span>Username</span><input value={selectedFaculty?.login_username || selectedFaculty?.email?.split('@')[0] || ''} readOnly /></label>
         <label><span>Department</span><select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}><option value="">Select Department</option>{departments.map((row) => <option key={row.department_id} value={row.department_id}>{row.department_code} - {row.department_name}</option>)}</select></label>
-        <label><span>Academic Year</span><select value={academicYear} onChange={(event) => setAcademicYear(event.target.value)}>{academicYears.map((year) => <option key={year}>{year}</option>)}</select></label>
+        <label><span>Academic Year</span><select value={academicYear} onChange={(event) => setAcademicYear(event.target.value)}>{permissionAcademicYears.map((year) => <option key={year}>{year}</option>)}</select></label>
       </div>
       <div className="table-panel"><div className="table-heading"><h4>Module Permissions</h4><span>{isLoading ? 'Loading...' : `${permissions.length} modules`}</span></div><div className="table-wrap">
         <table className="permission-table"><thead><tr><th>Module</th><th><label className="permission-select-all"><input type="checkbox" aria-label="Activate all module permissions" checked={Boolean(permissions.length) && permissions.every((row) => permissionKeys.every(([key]) => Boolean(row[key])))} onChange={toggleAllPermissions} disabled={!permissions.length} /> Activate All</label></th>{permissionKeys.map(([, label]) => <th key={label}>{label}</th>)}</tr></thead>
@@ -9521,14 +9648,11 @@ function App() {
 
       <section className={`workspace ${isViewOnly ? 'view-only-workspace' : ''}`}>
         {activeItem === 'Departments' ? (
-          <DepartmentsPage onViewProgrammes={() => navigateTo('Programmes')} />
+          <DepartmentsPage />
         ) : activeItem === 'Department Vision and Mission' ? (
           <DepartmentVisionMissionPage />
         ) : activeItem === 'Programmes' ? (
-          <ProgrammesPage
-            onViewSemesters={() => navigateTo('Semester')}
-            onViewCourses={() => navigateTo('Courses')}
-          />
+          <ProgrammesPage />
         ) : activeItem === 'Admission Batch Management' ? (
           <AdmissionBatchManagementPage />
         ) : activeItem === 'Semester' ? (
@@ -9571,6 +9695,8 @@ function App() {
           <StudentMasterPage />
         ) : activeItem === 'Student Course Faculty Mapping' ? (
           <StudentCourseFacultyMappingPage />
+        ) : ['All Departments', 'Department Wise', 'Course Wise'].includes(activeItem) ? (
+          <SubjectWiseReportPage reportName={activeItem} user={auth.user} />
         ) : activeItem === 'Report' ? (
           <ReportPage />
         ) : activeItem === 'Dashboard' ? (

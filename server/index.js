@@ -616,6 +616,67 @@ app.get('/api/faculty-course-assignments', async (request, response) => {
   }
 });
 
+app.get('/api/branch-wise-report-options', async (request, response) => {
+  const userId = Number(request.query.user_id);
+  if (!Number.isInteger(userId)) {
+    response.status(400).json({ error: 'Logged-in faculty is required.' });
+    return;
+  }
+  try {
+    await ensureAuthTables();
+    const departmentResult = await pool.query(`
+      SELECT department.department_id, department.department_code, department.department_name
+      FROM department
+      WHERE department.department_id = COALESCE(
+        (
+          SELECT faculty_department_mapping.department_id
+          FROM faculty_department_mapping
+          WHERE faculty_department_mapping.user_id = $1
+            AND faculty_department_mapping.status = 'Active'
+          ORDER BY faculty_department_mapping.updated_at DESC
+          LIMIT 1
+        ),
+        (SELECT users.department_id FROM users WHERE users.user_id = $1),
+        (
+          SELECT faculty.department_id
+          FROM faculty
+          WHERE faculty.user_id = $1
+             OR LOWER(faculty.email) = (SELECT LOWER(users.email) FROM users WHERE users.user_id = $1)
+          ORDER BY faculty.faculty_id
+          LIMIT 1
+        )
+      )
+    `, [userId]);
+    const department = departmentResult.rows[0] || null;
+    if (!department) {
+      response.json({ department: null, courses: [] });
+      return;
+    }
+    const courseResult = await pool.query(`
+      SELECT DISTINCT courses.course_id, courses.department_id, department.department_code,
+        department.department_name, courses.programme_id, programmes.programme_code,
+        programmes.programme_name, courses.semester_id, semesters.semester_name,
+        courses.course_code, courses.course_name, courses.status
+      FROM faculty
+      JOIN faculty_course_assignments
+        ON faculty_course_assignments.faculty_id = faculty.faculty_id
+       AND faculty_course_assignments.status = 'Active'
+      JOIN courses ON courses.course_id = faculty_course_assignments.course_id
+      LEFT JOIN department ON department.department_id = courses.department_id
+      LEFT JOIN programmes ON programmes.programme_id = courses.programme_id
+      LEFT JOIN semesters ON semesters.semester_id = courses.semester_id
+      WHERE (faculty.user_id = $1
+         OR LOWER(faculty.email) = (SELECT LOWER(users.email) FROM users WHERE users.user_id = $1))
+        AND courses.department_id = $2
+        AND courses.status <> 'Inactive'
+      ORDER BY courses.course_code, courses.course_name
+    `, [userId, department.department_id]);
+    response.json({ department, courses: courseResult.rows });
+  } catch (error) {
+    sendDatabaseError(response, error);
+  }
+});
+
 app.post('/api/faculty-course-assignments', async (request, response) => {
   const userId = Number(request.body.user_id);
   const facultyId = Number(request.body.faculty_id);
@@ -787,6 +848,9 @@ const defaultModules = [
   'Import Student',
   'Student Course Faculty Mapping',
   'Report',
+  'All Departments',
+  'Department Wise',
+  'Course Wise',
   'Settings',
   'Faculty Login Mapping',
   'Faculty Permission Management',
@@ -815,6 +879,14 @@ function parentModule(moduleName) {
     'Student Course Faculty Mapping',
   ].includes(moduleName)) {
     return 'Students';
+  }
+
+  if ([
+    'All Departments',
+    'Department Wise',
+    'Course Wise',
+  ].includes(moduleName)) {
+    return 'Report';
   }
 
   if ([
@@ -990,6 +1062,21 @@ async function ensureAuthTables() {
       status VARCHAR(20) DEFAULT 'Active',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+
+  await pool.query(`
+    UPDATE modules AS current_module
+    SET module_name = renamed_module.new_name
+    FROM (VALUES
+      ('All Branches', 'All Departments'),
+      ('Branch Wise', 'Department Wise'),
+      ('Subject Wise', 'Course Wise')
+    ) AS renamed_module(old_name, new_name)
+    WHERE current_module.module_name = renamed_module.old_name
+      AND NOT EXISTS (
+        SELECT 1 FROM modules AS existing_module
+        WHERE existing_module.module_name = renamed_module.new_name
+      )
   `);
 
   await pool.query(`
