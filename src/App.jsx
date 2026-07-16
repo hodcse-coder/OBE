@@ -250,6 +250,10 @@ const defaultAssessmentLevels = [
 ]
 
 const academicYears = ['2026-27', '2025-26', '2024-25', '2023-24']
+const targetAcademicYears = Array.from({ length: 11 }, (_item, index) => {
+  const startYear = 2023 + index
+  return `${startYear}-${String(startYear + 1).slice(-2)}`
+})
 const assessmentCategories = [
   'Internal & External Assessment',
   'Internal Assessment',
@@ -1725,6 +1729,7 @@ function CoursesPage() {
   const [editingId, setEditingId] = useState(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+
   const [isLoading, setIsLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
 
@@ -2141,7 +2146,7 @@ function CoursesPage() {
   )
 }
 
-function CourseOutcomesPage({ onMapping }) {
+function CourseOutcomesPage() {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [semesters, setSemesters] = useState([])
@@ -2386,6 +2391,7 @@ function CourseOutcomesPage({ onMapping }) {
     setIsUploading(true)
 
     try {
+      let savedCount = 0
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
@@ -2649,9 +2655,6 @@ function CourseOutcomesPage({ onMapping }) {
                       >
                         Delete
                       </button>
-                      <button type="button" onClick={onMapping}>
-                        CO-PO Mapping
-                      </button>
                     </div>
                   </td>
                 </tr>
@@ -2671,7 +2674,7 @@ function CourseOutcomesPage({ onMapping }) {
   )
 }
 
-function ProgrammeOutcomesPage() {
+function ProgrammeOutcomesPage({ user }) {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [outcomes, setOutcomes] = useState([])
@@ -2685,6 +2688,7 @@ function ProgrammeOutcomesPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const isDepartmentLocked = user?.role !== 'Admin'
 
   const filteredProgrammes = useMemo(
     () =>
@@ -2698,10 +2702,10 @@ function ProgrammeOutcomesPage() {
     () =>
       outcomes.filter(
         (outcome) =>
-          !selectedProgrammeId ||
-          String(outcome.programme_id) === selectedProgrammeId,
+          (!selectedDepartmentId || String(outcome.department_id) === selectedDepartmentId) &&
+          (!selectedProgrammeId || String(outcome.programme_id) === selectedProgrammeId),
       ),
-    [outcomes, selectedProgrammeId],
+    [outcomes, selectedDepartmentId, selectedProgrammeId],
   )
 
   const poList = filteredOutcomes.filter(
@@ -2715,6 +2719,16 @@ function ProgrammeOutcomesPage() {
   )
 
   async function loadDepartments() {
+    if (isDepartmentLocked) {
+      const response = await fetch(`/api/branch-wise-report-options?user_id=${user?.user_id || ''}`)
+      const data = await readResponseJson(response)
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load the permitted department.')
+      const departmentRows = data?.department ? [data.department] : []
+      setDepartments(departmentRows)
+      setSelectedDepartmentId(data?.department ? String(data.department.department_id) : '')
+      if (!data?.department) throw new Error('No department permission is assigned to this user.')
+      return
+    }
     const response = await fetch('/api/departments')
     const data = await readResponseJson(response)
 
@@ -2762,7 +2776,14 @@ function ProgrammeOutcomesPage() {
 
   useEffect(() => {
     refreshProgrammeOutcomesPage()
-  }, [])
+  }, [isDepartmentLocked, user?.user_id])
+
+  useEffect(() => {
+    if (!isDepartmentLocked || !selectedDepartmentId) return
+    setSelectedProgrammeId(
+      filteredProgrammes.length ? String(filteredProgrammes[0].programme_id) : '',
+    )
+  }, [filteredProgrammes, isDepartmentLocked, selectedDepartmentId])
 
   function updateSelectedDepartment(event) {
     setSelectedDepartmentId(event.target.value)
@@ -3032,7 +3053,7 @@ function ProgrammeOutcomesPage() {
             type="file"
             accept=".xlsx,.xls,.csv"
             onChange={(event) => uploadOutcomeExcel(event, type)}
-            disabled={isUploading}
+            disabled={isDepartmentLocked || isUploading}
           />
         </label>
 
@@ -3041,6 +3062,7 @@ function ProgrammeOutcomesPage() {
             type="button"
             className="save-button"
             onClick={() => downloadOutcomeFormat(type)}
+            disabled={isDepartmentLocked}
           >
             Excel Format
           </button>
@@ -3083,7 +3105,7 @@ function ProgrammeOutcomesPage() {
                   <td>{outcome.status}</td>
                   <td>
                     <div className="row-actions">
-                      <button type="button" onClick={() => deleteProgrammeOutcome(outcome)}>
+                      <button type="button" onClick={() => deleteProgrammeOutcome(outcome)} disabled={isDepartmentLocked}>
                         Delete
                       </button>
                     </div>
@@ -3119,6 +3141,7 @@ function ProgrammeOutcomesPage() {
           <select
             value={selectedDepartmentId}
             onChange={updateSelectedDepartment}
+            disabled={isDepartmentLocked}
             required
           >
             <option value="">Select Department</option>
@@ -3135,6 +3158,7 @@ function ProgrammeOutcomesPage() {
           <select
             value={selectedProgrammeId}
             onChange={(event) => setSelectedProgrammeId(event.target.value)}
+            disabled={isDepartmentLocked}
             required
           >
             <option value="">Select Programme</option>
@@ -3146,6 +3170,8 @@ function ProgrammeOutcomesPage() {
           </select>
         </label>
       </form>
+
+      {isDepartmentLocked && selectedDepartmentId && <div className="notice success">Department and Programme are fixed for this user. PO, PSO, and PEO lists are restricted to this selection.</div>}
 
       {(message || error) && (
         <div className={`notice ${error ? 'error' : 'success'}`}>
@@ -3163,20 +3189,32 @@ function ProgrammeOutcomesPage() {
   )
 }
 
-function DepartmentVisionMissionPage() {
+function DepartmentVisionMissionPage({ user }) {
   const [departments, setDepartments] = useState([])
   const [departmentId, setDepartmentId] = useState('')
   const [content, setContent] = useState([])
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const isDepartmentLocked = user?.role !== 'Admin'
 
   useEffect(() => {
+    if (isDepartmentLocked) {
+      fetch(`/api/branch-wise-report-options?user_id=${user?.user_id || ''}`).then(async (response) => {
+        const data = await readResponseJson(response)
+        if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load the permitted department.')
+        const departmentRows = data?.department ? [data.department] : []
+        setDepartments(departmentRows)
+        setDepartmentId(data?.department ? String(data.department.department_id) : '')
+        if (!data?.department) setError('No department permission is assigned to this user.')
+      }).catch((loadError) => setError(loadError.message))
+      return
+    }
     fetch('/api/departments').then(async (response) => {
       const data = await readResponseJson(response)
       if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load departments.')
       setDepartments(data || [])
     }).catch((loadError) => setError(loadError.message))
-  }, [])
+  }, [isDepartmentLocked, user?.user_id])
 
   useEffect(() => {
     if (!departmentId) { setContent([]); return }
@@ -3239,11 +3277,11 @@ function DepartmentVisionMissionPage() {
 
   return <section className="department-page">
     <div className="section-title"><div><p className="eyebrow">Department Management</p><h3>Department Vision and Mission</h3></div></div>
-    <form className="department-form"><label><span>Department</span><select value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setError(''); setMessage('') }}><option value="">Select Department</option>{departments.map((row) => <option key={row.department_id} value={row.department_id}>{row.department_name} ({row.department_code})</option>)}</select></label></form>
+    <form className="department-form"><label><span>Department</span><select value={departmentId} onChange={(event) => { setDepartmentId(event.target.value); setError(''); setMessage('') }} disabled={isDepartmentLocked}><option value="">Select Department</option>{departments.map((row) => <option key={row.department_id} value={row.department_id}>{row.department_name} ({row.department_code})</option>)}</select></label></form>
     {error && <div className="notice error">{error}</div>}
     {message && <div className="notice success">{message}</div>}
     <div className="department-vision-mission-grid">
-      {['VISION', 'MISSION'].map((type) => { const row = content.find((item) => item.content_type === type); const label = type === 'VISION' ? 'Vision' : 'Mission'; const heading = selectedDepartment ? `${label} of ${selectedDepartment.department_name} Department` : `Department ${label}`; return <article className="vision-mission-content-card" key={type}><h4>{heading}</h4><p>{row?.content_statement || `Select a department and upload the ${label} Excel file to display the statement.`}</p><div className="vision-mission-actions"><button type="button" className="save-button" onClick={() => downloadFormat(type)}>{label} Excel Format</button><label className="file-action">Upload {label}<input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => uploadExcel(event, type)} /></label></div></article> })}
+      {['VISION', 'MISSION'].map((type) => { const row = content.find((item) => item.content_type === type); const label = type === 'VISION' ? 'Vision' : 'Mission'; const heading = selectedDepartment ? `${label} of ${selectedDepartment.department_name} Department` : `Department ${label}`; return <article className="vision-mission-content-card" key={type}><h4>{heading}</h4><p>{row?.content_statement || `Select a department and upload the ${label} Excel file to display the statement.`}</p><div className="vision-mission-actions"><button type="button" className="save-button" onClick={() => downloadFormat(type)} disabled={isDepartmentLocked}>{label} Excel Format</button><label className={`file-action${isDepartmentLocked ? ' disabled' : ''}`} aria-disabled={isDepartmentLocked}>Upload {label}<input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => uploadExcel(event, type)} disabled={isDepartmentLocked} /></label></div></article> })}
       <div className="department-vision-mission-logo">
         <img src={departmentVisionMissionImage} alt="Department Vision and Mission" />
       </div>
@@ -3398,6 +3436,7 @@ function DashboardPage({ user }) {
   const [passwordMessage, setPasswordMessage] = useState('')
   const [isChangingPassword, setIsChangingPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const isDashboardActionsDisabled = user?.role !== 'Admin'
 
   async function loadDashboard() {
     setIsLoading(true)
@@ -3595,10 +3634,10 @@ function DashboardPage({ user }) {
           <h4>Our Vision</h4>
           <p>{visionContent?.content_statement || 'Upload the Vision Excel file to display the statement.'}</p>
           <div className="vision-mission-actions">
-            <button type="button" className="save-button" onClick={() => downloadVisionMissionFormat('VISION')}>Vision Excel Format</button>
-            <label className="file-action">
+            <button type="button" className="save-button" onClick={() => downloadVisionMissionFormat('VISION')} disabled={isDashboardActionsDisabled}>Vision Excel Format</button>
+            <label className={`file-action${isDashboardActionsDisabled ? ' disabled' : ''}`} aria-disabled={isDashboardActionsDisabled}>
               {uploadingDashboardType === 'VISION' ? 'Uploading...' : 'Upload Vision'}
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => uploadVisionMissionExcel(event, 'VISION')} disabled={Boolean(uploadingDashboardType)} />
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => uploadVisionMissionExcel(event, 'VISION')} disabled={isDashboardActionsDisabled || Boolean(uploadingDashboardType)} />
             </label>
           </div>
         </article>
@@ -3607,10 +3646,10 @@ function DashboardPage({ user }) {
           <h4>Our Mission</h4>
           <p>{missionContent?.content_statement || 'Upload the Mission Excel file to display the statement.'}</p>
           <div className="vision-mission-actions">
-            <button type="button" className="save-button" onClick={() => downloadVisionMissionFormat('MISSION')}>Mission Excel Format</button>
-            <label className="file-action">
+            <button type="button" className="save-button" onClick={() => downloadVisionMissionFormat('MISSION')} disabled={isDashboardActionsDisabled}>Mission Excel Format</button>
+            <label className={`file-action${isDashboardActionsDisabled ? ' disabled' : ''}`} aria-disabled={isDashboardActionsDisabled}>
               {uploadingDashboardType === 'MISSION' ? 'Uploading...' : 'Upload Mission'}
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => uploadVisionMissionExcel(event, 'MISSION')} disabled={Boolean(uploadingDashboardType)} />
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => uploadVisionMissionExcel(event, 'MISSION')} disabled={isDashboardActionsDisabled || Boolean(uploadingDashboardType)} />
             </label>
           </div>
         </article>
@@ -3620,7 +3659,7 @@ function DashboardPage({ user }) {
 }
 
 function AssessmentsPage() {
-  const [academicYear, setAcademicYear] = useState('2024-25')
+  const [academicYear, setAcademicYear] = useState('2023-24')
   const [assessmentCategory, setAssessmentCategory] = useState(
     'Internal & External Assessment',
   )
@@ -3629,7 +3668,20 @@ function AssessmentsPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [savedLevels, setSavedLevels] = useState([])
+  const [yearWiseLevels, setYearWiseLevels] = useState([])
   const [showForm, setShowForm] = useState(false)
+
+  async function loadYearWiseLevels(category = assessmentCategory) {
+    try {
+      const params = new URLSearchParams({ assessment_category: category, all_years: 'true' })
+      const response = await fetch(`/api/assessment-attainment-levels?${params}`)
+      const data = await readResponseJson(response)
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load year-wise levels.')
+      setYearWiseLevels(data || [])
+    } catch (loadError) {
+      setError(loadError.message)
+    }
+  }
 
   async function loadLevels(year = academicYear, category = assessmentCategory) {
     setIsLoading(true)
@@ -3674,6 +3726,10 @@ function AssessmentsPage() {
     loadLevels()
   }, [academicYear, assessmentCategory])
 
+  useEffect(() => {
+    loadYearWiseLevels()
+  }, [assessmentCategory])
+
   function updateLevel(index, field, value) {
     setLevels((current) =>
       current.map((level, levelIndex) =>
@@ -3716,6 +3772,26 @@ function AssessmentsPage() {
     setShowForm(true)
   }
 
+  function editYearLevels(year, category) {
+    const selectedLevels = yearWiseLevels.filter(
+      (level) => level.academic_year === year && level.assessment_category === category,
+    )
+    setAcademicYear(year)
+    setAssessmentCategory(category)
+    setSavedLevels(selectedLevels)
+    setLevels(selectedLevels.map((level) => ({
+      level_number: level.level_number,
+      code: level.code,
+      level_name: level.level_name,
+      min_percentage: String(level.min_percentage),
+      max_percentage: String(level.max_percentage),
+      condition_text: level.condition_text,
+    })))
+    setMessage('Saved levels loaded for editing.')
+    setError('')
+    setShowForm(true)
+  }
+
   async function deleteSavedLevel(levelId) {
     setMessage('')
     setError('')
@@ -3732,6 +3808,7 @@ function AssessmentsPage() {
 
       setMessage('Target level deleted.')
       await loadLevels()
+      await loadYearWiseLevels()
     } catch (deleteError) {
       setError(deleteError.message)
     }
@@ -3741,7 +3818,7 @@ function AssessmentsPage() {
     const [start, end] = year.split('-').map((part) => Number(part))
 
     if (Number.isNaN(start) || Number.isNaN(end)) {
-      return academicYears[1]
+      return targetAcademicYears[0]
     }
 
     return `${start - 1}-${String(end - 1).padStart(2, '0')}`
@@ -3813,6 +3890,7 @@ function AssessmentsPage() {
 
       setMessage('Target levels saved.')
       await loadLevels()
+      await loadYearWiseLevels()
       setShowForm(false)
     } catch (saveError) {
       setError(saveError.message)
@@ -3839,7 +3917,7 @@ function AssessmentsPage() {
               value={academicYear}
               onChange={(event) => setAcademicYear(event.target.value)}
             >
-              {academicYears.map((year) => (
+              {targetAcademicYears.map((year) => (
                 <option key={year}>{year}</option>
               ))}
             </select>
@@ -3947,13 +4025,13 @@ function AssessmentsPage() {
       <div className="table-panel">
         <div className="table-heading">
           <div>
-            <h4>Academic Year: {academicYear}</h4>
+            <h4>Level Configuration - Year Wise</h4>
             <span>Target Category: {assessmentCategory}</span>
           </div>
-          <span>{isLoading ? 'Loading...' : `${savedLevels.length} records`}</span>
+          <span>{isLoading ? 'Loading...' : `${yearWiseLevels.length} records`}</span>
         </div>
         <div className="table-wrap">
-          <table>
+          <table className="year-wise-levels-table">
             <thead>
               <tr>
                 <th>Academic Year</th>
@@ -3965,8 +4043,10 @@ function AssessmentsPage() {
               </tr>
             </thead>
             <tbody>
-              {savedLevels.map((level) => (
-                <tr key={level.level_id}>
+              {yearWiseLevels.map((level, index) => {
+                const startsNewYear = index > 0 && yearWiseLevels[index - 1].academic_year !== level.academic_year
+                return (
+                <tr className={startsNewYear ? 'year-separator' : ''} key={level.level_id}>
                   <td>{level.academic_year}</td>
                   <td>{level.assessment_category}</td>
                   <td>{level.level_name}</td>
@@ -3974,7 +4054,7 @@ function AssessmentsPage() {
                   <td>{level.condition_text}</td>
                   <td>
                     <div className="row-actions">
-                      <button type="button" onClick={editSavedLevels}>
+                      <button type="button" onClick={() => editYearLevels(level.academic_year, level.assessment_category)}>
                         Edit
                       </button>
                       <button
@@ -3986,8 +4066,9 @@ function AssessmentsPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
-              {!savedLevels.length && !isLoading && (
+                )
+              })}
+              {!yearWiseLevels.length && !isLoading && (
                 <tr>
                   <td colSpan="6" className="empty-cell">
                     No saved target levels found.
@@ -4121,7 +4202,7 @@ function MappingLevelInput({ value, onChange, label }) {
   )
 }
 
-function CoPoMappingPage() {
+function CoPoMappingPage({ user }) {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [semesters, setSemesters] = useState([])
@@ -4143,6 +4224,7 @@ function CoPoMappingPage() {
   const [isLoadingCourseOutcomes, setIsLoadingCourseOutcomes] = useState(false)
   const [isLoadingSavedMapping, setIsLoadingSavedMapping] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const isUserLogin = user?.role !== 'Admin'
 
   const filteredProgrammes = useMemo(
     () =>
@@ -4312,6 +4394,9 @@ function CoPoMappingPage() {
           fetch('/api/semesters'),
           fetch('/api/courses'),
           fetch('/api/programme-outcomes'),
+          ...(isUserLogin
+            ? [fetch(`/api/branch-wise-report-options?user_id=${user?.user_id || ''}`)]
+            : []),
         ])
         const data = await Promise.all(responses.map((response) => readResponseJson(response)))
 
@@ -4321,12 +4406,14 @@ function CoPoMappingPage() {
           }
         })
 
-        setDepartments(data[0] || [])
+        const permittedDepartment = isUserLogin ? data[5]?.department : null
+        setDepartments(isUserLogin ? (permittedDepartment ? [permittedDepartment] : []) : (data[0] || []))
         setProgrammes(data[1] || [])
         setSemesters(data[2] || [])
         setCourses(data[3] || [])
         setProgrammeOutcomes(data[4] || [])
         setCourseOutcomes([])
+        setSelection({ department_id: '', programme_id: '', semester_id: '', course_id: '', academic_year: '' })
       } catch (loadError) {
         setError(loadError.message)
       } finally {
@@ -4335,7 +4422,7 @@ function CoPoMappingPage() {
     }
 
     loadMappingMasters()
-  }, [])
+  }, [isUserLogin, user?.user_id])
 
   useEffect(() => {
     async function loadSelectedCourseOutcomes() {
@@ -4366,15 +4453,6 @@ function CoPoMappingPage() {
 
     loadSelectedCourseOutcomes()
   }, [selection.course_id])
-
-  useEffect(() => {
-    if (!selection.department_id && departments.length) {
-      setSelection((current) => ({
-        ...current,
-        department_id: String(departments[0].department_id),
-      }))
-    }
-  }, [departments, selection.department_id])
 
   useEffect(() => {
     const hasSelectedProgramme = filteredProgrammes.some(
@@ -4475,15 +4553,24 @@ function CoPoMappingPage() {
         next.programme_id = ''
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'programme_id') {
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'semester_id') {
         next.course_id = ''
+        next.academic_year = ''
+      }
+
+      if (name === 'course_id') {
+        const course = courses.find((row) => String(row.course_id) === value)
+        const semester = semesters.find((row) => String(row.semester_id) === String(course?.semester_id || next.semester_id))
+        next.academic_year = String(semester?.academic_year || '')
       }
 
       return next
@@ -4805,13 +4892,14 @@ function CoPoAttainmentPage() {
   const [courses, setCourses] = useState([])
   const [selection, setSelection] = useState({
     department_id: '', programme_id: '', semester_id: '', course_id: '',
-    academic_year: '2024-25', batch: '2022-26',
+    academic_year: '', batch: '2022-26',
   })
   const [mappingRows, setMappingRows] = useState([])
   const [coAttainmentRows, setCoAttainmentRows] = useState([])
   const [showAverages, setShowAverages] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
   const [, setIsLoading] = useState(false)
 
   const filteredProgrammes = useMemo(() => programmes.filter((item) =>
@@ -4825,6 +4913,10 @@ function CoPoAttainmentPage() {
     String(item.programme_id) === selection.programme_id &&
     String(item.semester_id) === selection.semester_id),
   [courses, selection.department_id, selection.programme_id, selection.semester_id])
+
+  const selectedCourseCoCodes = useMemo(() => [...new Set(
+    mappingRows.map((row) => normalizeCourseOutcomeCode(row.co_code)).filter(Boolean),
+  )].sort((a, b) => Number(a.replace(/\D/g, '')) - Number(b.replace(/\D/g, ''))), [mappingRows])
 
   const matrix = useMemo(() => {
     const next = Object.fromEntries(coCodeOptions.map((code) => [code, Object.fromEntries(poHeaders.map((po) => [po, 0]))]))
@@ -4879,9 +4971,14 @@ function CoPoAttainmentPage() {
     const { name, value } = event.target
     setSelection((current) => {
       const next = { ...current, [name]: value }
-      if (name === 'department_id') Object.assign(next, { programme_id: '', semester_id: '', course_id: '' })
-      if (name === 'programme_id') Object.assign(next, { semester_id: '', course_id: '' })
-      if (name === 'semester_id') next.course_id = ''
+      if (name === 'department_id') Object.assign(next, { programme_id: '', semester_id: '', course_id: '', academic_year: '' })
+      if (name === 'programme_id') Object.assign(next, { semester_id: '', course_id: '', academic_year: '' })
+      if (name === 'semester_id') Object.assign(next, { course_id: '', academic_year: '' })
+      if (name === 'course_id') {
+        const course = courses.find((row) => String(row.course_id) === value)
+        const semester = semesters.find((row) => String(row.semester_id) === String(course?.semester_id || next.semester_id))
+        next.academic_year = String(semester?.academic_year || '')
+      }
       return next
     })
     if (['department_id', 'programme_id', 'semester_id', 'course_id'].includes(name)) {
@@ -4965,49 +5062,397 @@ function CoPoAttainmentPage() {
     }
   }, [selection.academic_year, selection.batch, selection.course_id])
 
-  function saveAttainment() {
-    if (!showAverages) { setError('Calculate attainment before saving.'); return }
-    localStorage.setItem(`coPoAttainment:${selection.course_id}:${selection.academic_year}:${selection.batch}`,
-      JSON.stringify({ selection, matrix, averages }))
-    setError(''); setMessage('CO-PO attainment saved.')
+  async function saveAttainment() {
+    setError(''); setMessage('')
+    if (!selection.department_id || !selection.programme_id || !selection.semester_id || !selection.course_id || !selection.academic_year) {
+      setError('Select Department, Programme, Semester, and Course before saving.')
+      return
+    }
+    if (!selectedCourseCoCodes.length) {
+      setError('No CO-PO Mapping rows found for the selected course.')
+      return
+    }
+    setIsSaving(true)
+    try {
+      const response = await fetch('/api/co-po-attainment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...selection,
+          department_id: Number(selection.department_id),
+          programme_id: Number(selection.programme_id),
+          semester_id: Number(selection.semester_id),
+          course_id: Number(selection.course_id),
+          row_data: {
+            articulation_matrix: selectedCourseCoCodes.map((co) => ({ co_code: co, ...matrix[co] })),
+            articulation_average: averages,
+            direct_method_rows: selectedCourseCoCodes.map((co) => ({
+              co_code: co,
+              attainment_level: Number(attainmentByCo[co] || 0),
+              ...matrix[co],
+            })),
+            direct_method_output: directPoAttainment,
+          },
+        }),
+      })
+      const data = await readResponseJson(response)
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to save CO-PO Attainment.')
+      setMessage(data?.message || 'CO-PO Attainment saved.')
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
     <section className="page-section">
-      <div className="section-title"><div><span>Attainment</span><h3>CO-PO Attainment</h3></div></div>
+      <div className="section-title">
+        <div><span>Attainment</span><h3>CO-PO Attainment</h3></div>
+        <button type="button" className="save-button" onClick={saveAttainment} disabled={isSaving}>
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
       <div className="mapping-selector-grid">
         <label><span>Department</span><select name="department_id" value={selection.department_id} onChange={updateSelection}><option value="">Select Department</option>{departments.map((item) => <option key={item.department_id} value={item.department_id}>{item.department_name}</option>)}</select></label>
         <label><span>Programme</span><select name="programme_id" value={selection.programme_id} onChange={updateSelection}><option value="">Select Programme</option>{filteredProgrammes.map((item) => <option key={item.programme_id} value={item.programme_id}>{item.programme_name}</option>)}</select></label>
         <label><span>Semester</span><select name="semester_id" value={selection.semester_id} onChange={updateSelection}><option value="">Select Semester</option>{filteredSemesters.map((item) => <option key={item.semester_id} value={item.semester_id}>{item.semester_name}</option>)}</select></label>
         <label><span>Course</span><select name="course_id" value={selection.course_id} onChange={updateSelection}><option value="">Select Course</option>{filteredCourses.map((item) => <option key={item.course_id} value={item.course_id}>{item.course_code} - {item.course_name}</option>)}</select></label>
-        <label><span>Academic Year</span><select name="academic_year" value={selection.academic_year} onChange={updateSelection}>{academicYears.map((year) => <option key={year}>{year}</option>)}</select></label>
       </div>
-      <div className="mapping-actions">
-        <button type="button" className="save-button" onClick={saveAttainment}>Save</button>
-      </div>
+      {selection.course_id && (
+        <div className={`notice ${selection.academic_year ? 'success' : 'error'}`}>
+          {selection.academic_year
+            ? `Academic Year: ${selection.academic_year} (automatically selected from Course)`
+            : 'Academic Year is not configured for the selected Course Semester.'}
+        </div>
+      )}
       {(message || error) && <div className={`notice ${error ? 'error' : 'success'}`}>{error || message}</div>}
-      <div className="table-panel"><div className="table-wrap"><table className="mark-attainment-table co-po-attainment-table">
-        <thead><tr><th colSpan="13">PROGRAM ARTICULATION MATRIX</th></tr><tr><th>CO</th>{poHeaders.map((po) => <th key={po}>{po}</th>)}</tr></thead>
-        <tbody>
-          {coCodeOptions.map((co) => <tr key={co}><th>{co}</th>{poHeaders.map((po) => <td key={`${co}-${po}`}>{matrix[co][po] || ''}</td>)}</tr>)}
-          <tr className="summary-row"><th>AVG</th>{poHeaders.map((po) => <td key={`avg-${po}`}>{showAverages && averages[po] ? averages[po].toFixed(2) : ''}</td>)}</tr>
-        </tbody>
-      </table></div></div>
-      <div className="table-panel"><div className="table-wrap"><table className="mark-attainment-table co-po-attainment-table">
-        <thead>
-          <tr><th colSpan="14">PROGRAM OUTCOME ATTAINMENT CALCULATION (DIRECT METHOD)</th></tr>
-          <tr><th>CO</th><th>ATTAINMENT<br />LEVEL</th>{poHeaders.map((po) => <th key={`direct-${po}`}>{po}</th>)}</tr>
-        </thead>
-        <tbody>
-          {coCodeOptions.map((co) => <tr key={`direct-${co}`}>
-            <th>{co}</th>
-            <td>{attainmentByCo[co] ? attainmentByCo[co].toFixed(2) : ''}</td>
-            {poHeaders.map((po) => <td key={`direct-${co}-${po}`}>{matrix[co][po] || ''}</td>)}
-          </tr>)}
-          <tr className="summary-row"><th></th><th></th>{poHeaders.map((po) =>
-            <td key={`direct-average-${po}`}>{directPoAttainment[po] ? directPoAttainment[po].toFixed(2) : ''}</td>)}</tr>
-        </tbody>
-      </table></div></div>
+      <div className="table-panel">
+        <div className="table-heading">
+          <h4>Program Articulation Matrix</h4>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>CO</th>
+                {poHeaders.map((po) => <th key={po}>{po}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {selectedCourseCoCodes.map((co) => (
+                <tr key={co}>
+                  <th>{co}</th>
+                  {poHeaders.map((po) => (
+                    <td key={`${co}-${po}`}>{matrix[co]?.[po] || ''}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <th>AVG</th>
+                {poHeaders.map((po) => (
+                  <td key={`avg-${po}`}>{averages[po] ? averages[po].toFixed(2) : ''}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="table-panel">
+        <div className="table-heading">
+          <h4>Program Outcome Attainment Calculation (Direct Method)</h4>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>CO</th>
+                <th>ATTAINMENT LEVEL</th>
+                {poHeaders.map((po) => <th key={`direct-heading-${po}`}>{po}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {selectedCourseCoCodes.map((co) => (
+                <tr key={`direct-${co}`}>
+                  <th>{co}</th>
+                  <td>{attainmentByCo[co] ? attainmentByCo[co].toFixed(2) : ''}</td>
+                  {poHeaders.map((po) => (
+                    <td key={`direct-${co}-${po}`}>{matrix[co]?.[po] || ''}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <th></th>
+                <td></td>
+                {poHeaders.map((po) => (
+                  <td key={`direct-output-${po}`}>
+                    {directPoAttainment[po] ? directPoAttainment[po].toFixed(2) : ''}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CoPsoAttainmentPage() {
+  const [departments, setDepartments] = useState([])
+  const [programmes, setProgrammes] = useState([])
+  const [semesters, setSemesters] = useState([])
+  const [courses, setCourses] = useState([])
+  const [courseOutcomes, setCourseOutcomes] = useState([])
+  const [psoMappingRows, setPsoMappingRows] = useState([])
+  const [coAttainmentRows, setCoAttainmentRows] = useState([])
+  const [selection, setSelection] = useState({
+    department_id: '', programme_id: '', semester_id: '', course_id: '', academic_year: '',
+  })
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const attainmentByCo = useMemo(() => coAttainmentRows.reduce((next, row) => {
+    const coCode = normalizeCourseOutcomeCode(row.co_code || row.CO || row.course_outcome)
+    const overall = row.results?.overall ?? row.results?.OVERALL ?? row.overall ?? row.OVERALL
+    if (coCode) next[coCode] = Number(overall || 0)
+    return next
+  }, {}), [coAttainmentRows])
+  const psoMatrix = useMemo(() => {
+    const next = {}
+    courseOutcomes.forEach((outcome) => {
+      next[normalizeCourseOutcomeCode(outcome.co_code)] = Object.fromEntries(psoHeaders.map((pso) => [pso, 0]))
+    })
+    psoMappingRows.forEach((row) => {
+      const coCode = normalizeCourseOutcomeCode(row.co_code)
+      const psoCode = String(row.outcome_code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+      if (next[coCode] && psoHeaders.includes(psoCode)) next[coCode][psoCode] = Number(row.mapping_level || 0)
+    })
+    return next
+  }, [courseOutcomes, psoMappingRows])
+  const directPsoAttainment = useMemo(() => Object.fromEntries(psoHeaders.map((pso) => {
+    let weightedTotal = 0
+    let mappingTotal = 0
+    courseOutcomes.forEach((outcome) => {
+      const coCode = normalizeCourseOutcomeCode(outcome.co_code)
+      const mappingLevel = Number(psoMatrix[coCode]?.[pso] || 0)
+      if (mappingLevel > 0) {
+        weightedTotal += Number(attainmentByCo[coCode] || 0) * mappingLevel
+        mappingTotal += mappingLevel
+      }
+    })
+    return [pso, mappingTotal ? weightedTotal / mappingTotal : 0]
+  })), [attainmentByCo, courseOutcomes, psoMatrix])
+
+  const filteredProgrammes = useMemo(() => programmes.filter((item) =>
+    String(item.department_id) === selection.department_id), [programmes, selection.department_id])
+  const filteredSemesters = useMemo(() => semesters.filter((item) =>
+    String(item.department_id) === selection.department_id &&
+    String(item.programme_id) === selection.programme_id),
+  [semesters, selection.department_id, selection.programme_id])
+  const filteredCourses = useMemo(() => courses.filter((item) =>
+    String(item.department_id) === selection.department_id &&
+    String(item.programme_id) === selection.programme_id &&
+    String(item.semester_id) === selection.semester_id),
+  [courses, selection.department_id, selection.programme_id, selection.semester_id])
+
+  useEffect(() => {
+    Promise.all(['/api/departments', '/api/programmes', '/api/semesters', '/api/courses'].map(async (url) => {
+      const response = await fetch(url)
+      const data = await readResponseJson(response)
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load master data.')
+      return data
+    })).then(([departmentData, programmeData, semesterData, courseData]) => {
+      setDepartments(departmentData || [])
+      setProgrammes(programmeData || [])
+      setSemesters(semesterData || [])
+      setCourses(courseData || [])
+    }).catch((loadError) => setError(loadError.message))
+  }, [])
+
+  useEffect(() => {
+    async function loadCourseAttainment() {
+      if (!selection.course_id || !selection.academic_year) {
+        setCourseOutcomes([])
+        setPsoMappingRows([])
+        setCoAttainmentRows([])
+        return
+      }
+      setError('')
+      try {
+        const responses = await Promise.all([
+          fetch(`/api/course-outcomes?course_id=${selection.course_id}`),
+          fetch(`/api/co-po-mapping?course_id=${selection.course_id}`),
+          fetch(`/api/co-attainment-calculation?course_id=${selection.course_id}&academic_year=${encodeURIComponent(selection.academic_year)}`),
+          fetch(`/api/mark-attainment?course_id=${selection.course_id}&academic_year=${encodeURIComponent(selection.academic_year)}`),
+          fetch(`/api/articulation-matrix?course_id=${selection.course_id}`),
+          fetch(`/api/university-question-rubric?course_id=${selection.course_id}`),
+          fetch(`/api/external-marks-upload?course_id=${selection.course_id}&academic_year=${encodeURIComponent(selection.academic_year)}`),
+        ])
+        const data = await Promise.all(responses.map((response) => readResponseJson(response)))
+        responses.forEach((response, index) => {
+          if (!response.ok) throw new Error(data[index]?.detail || data[index]?.error || 'Unable to load PSO attainment data.')
+        })
+        const savedRowData = typeof data[2]?.row_data === 'string' ? JSON.parse(data[2].row_data) : data[2]?.row_data
+        const savedCoRows = savedRowData?.coRows || savedRowData?.co_rows || savedRowData?.rows || []
+        const markRowsByTool = (data[3] || []).reduce((next, row) => {
+          next[row.assessment_tool] = row
+          return next
+        }, {})
+        const articulationRowsByCo = (data[4] || []).reduce((next, row) => {
+          next[normalizeCourseOutcomeCode(row.co_code)] = normalizeArticulationMatrixRow(row)
+          return next
+        }, {})
+        const rubricByCo = (data[5] || []).reduce((next, row) => {
+          next[normalizeCourseOutcomeCode(row.co_code)] = Number(row.rubric || 0)
+          return next
+        }, {})
+        const externalPercent = Number(data[6]?.[0]?.attainment_value)
+        const externalLevelPoint = Number.isFinite(externalPercent)
+          ? Number(getAssessmentLevel(externalPercent).levelPoint || 0)
+          : Number(markRowsByTool.end_sem?.level_point || 0)
+        const liveCoRows = (data[0] || []).map((outcome) => {
+          const coCode = normalizeCourseOutcomeCode(outcome.co_code)
+          let articulationTotal = 0
+          let weightedLevelPointTotal = 0
+          coAttainmentColumns.forEach((column) => {
+            const articulationLevel = Number(articulationRowsByCo[coCode]?.[column.key] || 0)
+            const levelPoint = Number(markRowsByTool[column.markKey]?.level_point || 0)
+            if (articulationLevel) {
+              articulationTotal += articulationLevel
+              weightedLevelPointTotal += articulationLevel * levelPoint
+            }
+          })
+          const internalAttainment = articulationTotal ? weightedLevelPointTotal / articulationTotal : 0
+          const externalAttainment = rubricByCo[coCode] && externalLevelPoint ? externalLevelPoint : 0
+          const overall = internalAttainment || externalAttainment
+            ? (0.33 * internalAttainment) + (0.67 * externalAttainment)
+            : 0
+          return { co_code: coCode, results: { overall: overall ? Number(overall.toFixed(2)) : '' } }
+        })
+        setCourseOutcomes(data[0] || [])
+        setPsoMappingRows((data[1] || []).filter((row) => String(row.outcome_type || '').toUpperCase() === 'PSO'))
+        setCoAttainmentRows(savedCoRows.length ? savedCoRows : liveCoRows)
+      } catch (loadError) {
+        setError(loadError.message)
+      }
+    }
+    loadCourseAttainment()
+  }, [selection.academic_year, selection.course_id])
+
+  function updateSelection(event) {
+    const { name, value } = event.target
+    setSelection((current) => {
+      const next = { ...current, [name]: value }
+      if (name === 'department_id') Object.assign(next, { programme_id: '', semester_id: '', course_id: '', academic_year: '' })
+      if (name === 'programme_id') Object.assign(next, { semester_id: '', course_id: '', academic_year: '' })
+      if (name === 'semester_id') Object.assign(next, { course_id: '', academic_year: '' })
+      if (name === 'course_id') {
+        const course = courses.find((row) => String(row.course_id) === value)
+        const semester = semesters.find((row) => String(row.semester_id) === String(course?.semester_id || next.semester_id))
+        next.academic_year = String(semester?.academic_year || '')
+      }
+      return next
+    })
+    setError('')
+    setMessage('')
+  }
+
+  async function savePsoAttainment() {
+    setError(''); setMessage('')
+    if (!selection.department_id || !selection.programme_id || !selection.semester_id || !selection.course_id || !selection.academic_year) {
+      setError('Select Department, Programme, Semester, and Course before saving.')
+      return
+    }
+    if (!courseOutcomes.length) {
+      setError('No Course Outcomes found for the selected course.')
+      return
+    }
+    setIsSaving(true)
+    try {
+      const response = await fetch('/api/co-pso-attainment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...selection,
+          department_id: Number(selection.department_id),
+          programme_id: Number(selection.programme_id),
+          semester_id: Number(selection.semester_id),
+          course_id: Number(selection.course_id),
+          row_data: {
+            co_rows: courseOutcomes.map((outcome) => {
+              const coCode = normalizeCourseOutcomeCode(outcome.co_code)
+              return { co_code: coCode, attainment_level: Number(attainmentByCo[coCode] || 0), ...psoMatrix[coCode] }
+            }),
+            direct_pso_attainment: directPsoAttainment,
+          },
+        }),
+      })
+      const data = await readResponseJson(response)
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to save CO-PSO Attainment.')
+      setMessage(data?.message || 'CO-PSO Attainment saved.')
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <section className="page-section co-pso-attainment-page">
+      <div className="section-title">
+        <div><span>Attainment</span><h3>PSO Attainment (Direct Method)</h3></div>
+        <button type="button" className="save-button" onClick={savePsoAttainment} disabled={isSaving}>
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      <div className="mapping-selector-grid">
+        <label><span>Department</span><select name="department_id" value={selection.department_id} onChange={updateSelection}><option value="">Select Department</option>{departments.map((item) => <option key={item.department_id} value={item.department_id}>{item.department_name}</option>)}</select></label>
+        <label><span>Programme</span><select name="programme_id" value={selection.programme_id} onChange={updateSelection}><option value="">Select Programme</option>{filteredProgrammes.map((item) => <option key={item.programme_id} value={item.programme_id}>{item.programme_name}</option>)}</select></label>
+        <label><span>Semester</span><select name="semester_id" value={selection.semester_id} onChange={updateSelection}><option value="">Select Semester</option>{filteredSemesters.map((item) => <option key={item.semester_id} value={item.semester_id}>{item.semester_name}</option>)}</select></label>
+        <label><span>Course</span><select name="course_id" value={selection.course_id} onChange={updateSelection}><option value="">Select Course</option>{filteredCourses.map((item) => <option key={item.course_id} value={item.course_id}>{item.course_code} - {item.course_name}</option>)}</select></label>
+      </div>
+      {selection.course_id && <div className={`notice ${selection.academic_year ? 'success' : 'error'}`}>
+        {selection.academic_year
+          ? `Academic Year: ${selection.academic_year} (automatically selected from Course)`
+          : 'Academic Year is not configured for the selected Course Semester.'}
+      </div>}
+      {(message || error) && <div className={`notice ${error ? 'error' : 'success'}`}>{error || message}</div>}
+      <div className="table-panel">
+        <div className="table-heading">
+          <h4>PSO Attainment (Direct Method)</h4>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>CO</th>
+                <th>ATTAINMENT LEVEL</th>
+                {psoHeaders.map((pso) => <th key={pso}>{pso}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {courseOutcomes.map((outcome) => {
+                const coCode = normalizeCourseOutcomeCode(outcome.co_code)
+                return (
+                  <tr key={outcome.co_id || coCode}>
+                    <th>{outcome.co_code || coCode}</th>
+                    <td>{attainmentByCo[coCode] ? attainmentByCo[coCode].toFixed(2) : ''}</td>
+                    {psoHeaders.map((pso) => <td key={`${coCode}-${pso}`}>{psoMatrix[coCode]?.[pso] || ''}</td>)}
+                  </tr>
+                )
+              })}
+              <tr>
+                <th colSpan="2">DIRECT PSO ATTAINMENT</th>
+                {psoHeaders.map((pso) => (
+                  <td key={`direct-${pso}`}>{directPsoAttainment[pso] ? directPsoAttainment[pso].toFixed(2) : ''}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   )
 }
@@ -5025,6 +5470,7 @@ function ArticulationMatrixPage() {
     programme_id: '',
     semester_id: '',
     course_id: '',
+    academic_year: '',
   })
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -5160,12 +5606,6 @@ function ArticulationMatrixPage() {
   }, [rubricRows])
 
   useEffect(() => {
-    if (!selection.department_id && departments.length) {
-      setSelection((current) => ({ ...current, department_id: String(departments[0].department_id) }))
-    }
-  }, [departments, selection.department_id])
-
-  useEffect(() => {
     const hasSelectedProgramme = filteredProgrammes.some(
       (programme) => String(programme.programme_id) === selection.programme_id,
     )
@@ -5212,15 +5652,24 @@ function ArticulationMatrixPage() {
         next.programme_id = ''
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'programme_id') {
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'semester_id') {
         next.course_id = ''
+        next.academic_year = ''
+      }
+
+      if (name === 'course_id') {
+        const course = courses.find((row) => String(row.course_id) === value)
+        const semester = semesters.find((row) => String(row.semester_id) === String(course?.semester_id || next.semester_id))
+        next.academic_year = String(semester?.academic_year || '')
       }
 
       return next
@@ -5340,6 +5789,11 @@ function ArticulationMatrixPage() {
 
     if (!selectedDepartment || !selectedProgramme || !selectedSemester || !selectedCourse) {
       setError('Select Department, Programme, Semester, and Course before saving.')
+      return
+    }
+
+    if (!selection.academic_year) {
+      setError('Academic Year is not configured for the selected Course Semester.')
       return
     }
 
@@ -5480,20 +5934,16 @@ function ArticulationMatrixPage() {
           </select>
         </label>
         <label>
-          <span>Academic Year</span>
-          <select name="academic_year" value={selection.academic_year} onChange={updateSelection}>
-            {academicYears.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
           <span>Import Excel</span>
           <input type="file" accept=".xlsx,.xls,.csv" onChange={parseArticulationExcel} />
         </label>
       </div>
+
+      {selection.course_id && <div className={`notice ${selection.academic_year ? 'success' : 'error'}`}>
+        {selection.academic_year
+          ? `Academic Year: ${selection.academic_year} (automatically selected from Course)`
+          : 'Academic Year is not configured for the selected Course Semester.'}
+      </div>}
 
       <div className="mapping-actions">
         <button type="button" className="action-button" onClick={downloadArticulationFormat}>
@@ -5568,7 +6018,7 @@ function ArticulationMatrixPage() {
   )
 }
 
-function UniversityMappingQuestionPage() {
+function UniversityMappingQuestionPage({ user }) {
   const defaultQuestionRows = useMemo(() => [
     { question_no: '1', sub_question: 'a', co_code: 'CO1', carrying_mark: 2 },
     { question_no: '1', sub_question: 'b', co_code: 'CO1', carrying_mark: 2 },
@@ -5621,6 +6071,7 @@ function UniversityMappingQuestionPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const isUserLogin = user?.role !== 'Admin'
 
   const filteredProgrammes = useMemo(
     () =>
@@ -5836,8 +6287,10 @@ function UniversityMappingQuestionPage() {
           setQuestionRows(normalizeQuestionMappingRows(data))
           setMessage(`${data.length} saved question mapping rows loaded.`)
         } else {
-          setQuestionRows(defaultQuestionRows)
-          setMessage('No saved mapping found. Default question mapping rows are ready to save.')
+          setQuestionRows(isUserLogin ? [] : defaultQuestionRows)
+          setMessage(isUserLogin
+            ? 'No saved mapping found. No question mapping data is available.'
+            : 'No saved mapping found. Default question mapping rows are ready to save.')
         }
       } catch (loadError) {
         setError(loadError.message)
@@ -5857,6 +6310,7 @@ function UniversityMappingQuestionPage() {
     selection.exam_month,
     selection.exam_year,
     defaultQuestionRows,
+    isUserLogin,
   ])
 
   async function saveUniversityQuestionMapping() {
@@ -6049,27 +6503,6 @@ function UniversityMappingQuestionPage() {
             <option>2025-26</option>
           </select>
         </label>
-        <label>
-          <span>Exam Type</span>
-          <select name="exam_type" value={selection.exam_type} onChange={updateSelection}>
-            <option>Regular</option>
-            <option>Supplementary</option>
-            <option>Back Paper</option>
-          </select>
-        </label>
-        <label>
-          <span>Exam Month</span>
-          <select name="exam_month" value={selection.exam_month} onChange={updateSelection}>
-            <option>April</option>
-            <option>May</option>
-            <option>November</option>
-            <option>December</option>
-          </select>
-        </label>
-        <label>
-          <span>Exam Year</span>
-          <input name="exam_year" value={selection.exam_year} onChange={updateSelection} />
-        </label>
       </div>
 
       <div className="mapping-actions">
@@ -6134,11 +6567,11 @@ function UniversityMappingQuestionPage() {
                   </td>
                 </tr>
               )}
-              <tr className="summary-row">
+              {questionRows.length > 0 && <tr className="summary-row">
                 <td colSpan="3">Total Mapped Marks</td>
                 <td>{totalMappedMarks} / {totalMarks}</td>
                 <td></td>
-              </tr>
+              </tr>}
             </tbody>
           </table>
         </div>
@@ -6172,12 +6605,13 @@ function UniversityMappingQuestionPage() {
                   </td>
                 </tr>
               ))}
-              <tr className="summary-row">
+              {!coSummaryRows.length && <tr><td colSpan="4" className="empty-cell">No CO summary or rubric mapping data found.</td></tr>}
+              {coSummaryRows.length > 0 && <tr className="summary-row">
                 <td>TOTAL</td>
                 <td></td>
                 <td>{totalMappedMarks}</td>
                 <td></td>
-              </tr>
+              </tr>}
             </tbody>
           </table>
         </div>
@@ -6837,9 +7271,10 @@ function MarkAttainmentPage() {
     programme_id: '',
     semester_id: '',
     course_id: '',
-    academic_year: '2024-25',
+    academic_year: '',
   })
   const [internalRows, setInternalRows] = useState([])
+  const [internalHistoryRows, setInternalHistoryRows] = useState([])
   const [externalRows, setExternalRows] = useState([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -6911,6 +7346,7 @@ function MarkAttainmentPage() {
     async function loadMarkData() {
       if (!selection.course_id) {
         setInternalRows([])
+        setInternalHistoryRows([])
         setExternalRows([])
         return
       }
@@ -6922,7 +7358,7 @@ function MarkAttainmentPage() {
         const query = `course_id=${selection.course_id}`
         const responses = await Promise.all([
           fetch(`/api/internal-marks-upload?${query}`),
-          fetch(`/api/external-marks-upload?${query}`),
+          fetch(`/api/external-marks-upload?${query}&academic_year=${encodeURIComponent(selection.academic_year)}`),
         ])
         const data = await Promise.all(responses.map((response) => readResponseJson(response)))
 
@@ -6932,8 +7368,9 @@ function MarkAttainmentPage() {
           }
         })
 
-        setInternalRows(data[0] || [])
-        setExternalRows(data[1] || [])
+        setInternalHistoryRows(data[0] || [])
+        setInternalRows((data[0] || []).filter((row) => String(row.academic_year || '') === selection.academic_year))
+        setExternalRows((data[1] || []).filter((row) => String(row.academic_year || '') === selection.academic_year))
       } catch (loadError) {
         setError(loadError.message)
       } finally {
@@ -6954,15 +7391,24 @@ function MarkAttainmentPage() {
         next.programme_id = ''
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'programme_id') {
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'semester_id') {
         next.course_id = ''
+        next.academic_year = ''
+      }
+
+      if (name === 'course_id') {
+        const course = courses.find((row) => String(row.course_id) === value)
+        const semester = semesters.find((row) => String(row.semester_id) === String(course?.semester_id || next.semester_id))
+        next.academic_year = String(semester?.academic_year || '')
       }
 
       return next
@@ -6979,13 +7425,30 @@ function MarkAttainmentPage() {
         const appearedRows = sourceRows.filter((row) => String(row.regd_no || '').trim())
         const total = appearedRows.reduce((sum, row) => sum + Number(row[markKey] || 0), 0)
         const calculatedTargetAverage = appearedRows.length ? total / appearedRows.length : 0
+        const selectedYearStart = Number.parseInt(selection.academic_year, 10)
+        const previousYears = [...new Set(internalHistoryRows
+          .map((row) => String(row.academic_year || ''))
+          .filter((year) => Number.parseInt(year, 10) < selectedYearStart))]
+          .sort((a, b) => Number.parseInt(b, 10) - Number.parseInt(a, 10))
+          .slice(0, 2)
+        const previousYearAverages = previousYears.map((year) => {
+          const rows = internalHistoryRows.filter(
+            (row) => String(row.academic_year || '') === year && String(row.regd_no || '').trim(),
+          )
+          return rows.length
+            ? rows.reduce((sum, row) => sum + Number(row[tool.key] || 0), 0) / rows.length
+            : null
+        }).filter((value) => Number.isFinite(value))
+        const previousTwoYearAverage = previousYearAverages.length
+          ? previousYearAverages.reduce((sum, value) => sum + value, 0) / previousYearAverages.length
+          : calculatedTargetAverage
         const uploadedTargetAverage = appearedRows
           .map((row) => Number(row.target_average))
           .find((value) => Number.isFinite(value) && value > 0)
         const targetAverage =
-          tool.key === 'end_sem' && Number.isFinite(uploadedTargetAverage)
-            ? uploadedTargetAverage
-            : calculatedTargetAverage
+          tool.key === 'end_sem'
+            ? (Number.isFinite(uploadedTargetAverage) ? uploadedTargetAverage : calculatedTargetAverage)
+            : previousTwoYearAverage
         const attainedCount = appearedRows.filter((row) => Number(row[markKey] || 0) >= targetAverage).length
         const attainmentPercent = appearedRows.length ? (attainedCount / appearedRows.length) * 100 : 0
         const { level, levelPoint } = getAssessmentLevel(attainmentPercent)
@@ -7000,7 +7463,7 @@ function MarkAttainmentPage() {
           level_point: levelPoint === '-' ? null : levelPoint,
         }
       }),
-    [externalRows, internalRows],
+    [externalRows, internalHistoryRows, internalRows, selection.academic_year],
   )
 
   const rowByTool = useMemo(
@@ -7018,6 +7481,11 @@ function MarkAttainmentPage() {
 
     if (!selection.department_id || !selection.programme_id || !selection.semester_id || !selection.course_id) {
       setError('Select Department, Programme, Semester, Course, and Academic Year before saving.')
+      return
+    }
+
+    if (!selection.academic_year) {
+      setError('Academic Year is not configured for the selected Course Semester.')
       return
     }
 
@@ -7084,6 +7552,14 @@ function MarkAttainmentPage() {
           <p className="eyebrow">Dashboard / Attainment / Mark Attainment</p>
           <h3>Assessment Target & Mark Attainment</h3>
         </div>
+        <button
+          type="button"
+          className="save-button"
+          onClick={saveAttainment}
+          disabled={isSaving || isLoading}
+        >
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
       </div>
 
       <div className="mapping-selector-grid">
@@ -7131,15 +7607,13 @@ function MarkAttainmentPage() {
             ))}
           </select>
         </label>
-        <label>
-          <span>Academic Year</span>
-          <select name="academic_year" value={selection.academic_year} onChange={updateSelection}>
-            {academicYears.map((year) => (
-              <option key={year}>{year}</option>
-            ))}
-          </select>
-        </label>
       </div>
+
+      {selection.course_id && <div className={`notice ${selection.academic_year ? 'success' : 'error'}`}>
+        {selection.academic_year
+          ? `Academic Year: ${selection.academic_year} (automatically selected from Course)`
+          : 'Academic Year is not configured for the selected Course Semester.'}
+      </div>}
 
       {isLoading && <div className="notice success">Loading Mark Attainment data...</div>}
       {(message || error) && (
@@ -7150,13 +7624,10 @@ function MarkAttainmentPage() {
 
       <div className="table-panel">
         <div className="table-heading">
-          <h4>Assessment Target Configuration</h4>
-          <span>
-            Collected from saved Internal Mark Upload rows
-          </span>
+          <h4>Mark Attainment Calculation</h4>
         </div>
-        <div className="table-wrap mark-attainment-wrap">
-          <table className="mark-attainment-table">
+        <div className="table-wrap">
+          <table>
             <thead>
               <tr>
                 <th>ASSESSMENT TOOLS</th>
@@ -7169,42 +7640,38 @@ function MarkAttainmentPage() {
               <tr>
                 <th>WEIGHTAGE</th>
                 {markAttainmentTools.map((tool) => (
-                  <td key={`weight-${tool.key}`}>{tool.weightage}</td>
+                  <td key={`weightage-${tool.key}`}>{selection.course_id ? tool.weightage : ''}</td>
                 ))}
               </tr>
               <tr>
-                <th>TARGET AVERAGE<br />(AVG. OF LAST YEAR EXAM)</th>
+                <th>TARGET AVERAGE<br />(AVERAGE OF LAST TWO YEARS EXAM)</th>
                 {markAttainmentTools.map((tool) => (
-                  <td key={`target-${tool.key}`}>{displayValue(tool.key, 'target_average')}</td>
+                  <td key={`target-${tool.key}`}>{selection.course_id ? displayValue(tool.key, 'target_average') : ''}</td>
                 ))}
               </tr>
               <tr>
-                <th>ATTAINMENT %</th>
+                <th>% ATTAINMENT</th>
                 {markAttainmentTools.map((tool) => (
-                  <td key={`attainment-${tool.key}`}>{displayValue(tool.key, 'attainment_percent')}</td>
+                  <td key={`attainment-${tool.key}`}>{selection.course_id ? displayValue(tool.key, 'attainment_percent') : ''}</td>
                 ))}
               </tr>
               <tr>
                 <th>LEVEL</th>
                 {markAttainmentTools.map((tool) => (
-                  <td key={`level-${tool.key}`}>{displayValue(tool.key, 'level')}</td>
+                  <td key={`level-${tool.key}`}>{selection.course_id ? displayValue(tool.key, 'level') : ''}</td>
                 ))}
               </tr>
               <tr>
                 <th>LEVEL POINT</th>
                 {markAttainmentTools.map((tool) => (
-                  <td key={`point-${tool.key}`}>{displayValue(tool.key, 'level_point')}</td>
+                  <td key={`level-point-${tool.key}`}>{selection.course_id ? displayValue(tool.key, 'level_point') : ''}</td>
                 ))}
               </tr>
             </tbody>
           </table>
         </div>
-        <div className="mapping-actions mark-attainment-actions">
-          <button type="button" className="save-button" onClick={saveAttainment} disabled={isSaving}>
-            Save
-          </button>
-        </div>
       </div>
+
     </section>
   )
 }
@@ -7219,12 +7686,13 @@ function CoAttainmentCalculationPage() {
     programme_id: '',
     semester_id: '',
     course_id: '',
-    academic_year: '2024-25',
+    academic_year: '',
     batch: '2022-26',
     internal_weight: 80,
     external_weight: 20,
   })
   const [markRows, setMarkRows] = useState([])
+  const [internalMarkRows, setInternalMarkRows] = useState([])
   const [externalMarkRows, setExternalMarkRows] = useState([])
   const [articulationRows, setArticulationRows] = useState([])
   const [rubricRows, setRubricRows] = useState([])
@@ -7270,23 +7738,41 @@ function CoAttainmentCalculationPage() {
       }, {}),
     [markRows],
   )
+  const internalLevelByTool = useMemo(() =>
+    coAttainmentColumns.reduce((mapping, column) => {
+      const appearedRows = internalMarkRows.filter((row) => String(row.regd_no || '').trim())
+      const average = appearedRows.length
+        ? appearedRows.reduce((total, row) => total + Number(row[column.markKey] || 0), 0) / appearedRows.length
+        : 0
+      const attainedCount = appearedRows.filter((row) => Number(row[column.markKey] || 0) >= average).length
+      const attainmentPercentage = appearedRows.length ? (attainedCount / appearedRows.length) * 100 : 0
+      const assessmentLevel = appearedRows.length ? getAssessmentLevel(attainmentPercentage) : { level: '', levelPoint: '' }
+      mapping[column.key] = assessmentLevel
+      return mapping
+    }, {}),
+  [internalMarkRows])
   const displayLevelRows = useMemo(
     () =>
       coAttainmentColumns.reduce((mapping, column) => {
-        mapping[column.key] = uploadedLevelRows[column.key] || markRowByTool[column.markKey]?.level || ''
+        mapping[column.key] = internalLevelByTool[column.key]?.level || uploadedLevelRows[column.key] || markRowByTool[column.markKey]?.level || ''
         return mapping
       }, {}),
-    [markRowByTool, uploadedLevelRows],
+    [internalLevelByTool, markRowByTool, uploadedLevelRows],
   )
   const displayLevelPointRows = useMemo(
     () =>
       coAttainmentColumns.reduce((mapping, column) => {
-        mapping[column.key] = uploadedLevelPointRows[column.key] ?? markRowByTool[column.markKey]?.level_point ?? ''
+        mapping[column.key] = internalLevelByTool[column.key]?.levelPoint || uploadedLevelPointRows[column.key] || markRowByTool[column.markKey]?.level_point || ''
         return mapping
       }, {}),
-    [markRowByTool, uploadedLevelPointRows],
+    [internalLevelByTool, markRowByTool, uploadedLevelPointRows],
   )
   const externalAttainment = useMemo(() => {
+    const savedSummary = externalMarkRows[0]?.calculation_summary
+    if (savedSummary?.level && savedSummary?.level_point !== undefined) {
+      return { level: savedSummary.level, levelPoint: savedSummary.level_point }
+    }
+
     const attainmentPercent = Number(externalMarkRows[0]?.attainment_value)
 
     if (!Number.isFinite(attainmentPercent)) {
@@ -7386,10 +7872,10 @@ function CoAttainmentCalculationPage() {
   }, [selection.academic_year, selection.batch, selection.course_id])
 
   useEffect(() => {
-    if (markRows.length && articulationRows.length) {
+    if ((internalMarkRows.length || markRows.length) && articulationRows.length) {
       calculateCoAttainment({ silent: true })
     }
-  }, [articulationRows, externalMarkRows, markRows, rubricRows])
+  }, [articulationRows, externalMarkRows, internalMarkRows, markRows, rubricRows])
 
   function updateSelection(event) {
     const { name, value } = event.target
@@ -7401,15 +7887,24 @@ function CoAttainmentCalculationPage() {
         next.programme_id = ''
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'programme_id') {
         next.semester_id = ''
         next.course_id = ''
+        next.academic_year = ''
       }
 
       if (name === 'semester_id') {
         next.course_id = ''
+        next.academic_year = ''
+      }
+
+      if (name === 'course_id') {
+        const course = courses.find((row) => String(row.course_id) === value)
+        const semester = semesters.find((row) => String(row.semester_id) === String(course?.semester_id || next.semester_id))
+        next.academic_year = String(semester?.academic_year || '')
       }
 
       return next
@@ -7445,6 +7940,7 @@ function CoAttainmentCalculationPage() {
         fetch(`/api/co-attainment-calculation?${savedQuery}`),
         fetch(`/api/university-question-rubric?course_id=${selection.course_id}`),
         fetch(`/api/external-marks-upload?${query}`),
+        fetch(`/api/internal-marks-upload?course_id=${selection.course_id}`),
       ])
       const data = await Promise.all(responses.map((response) => readResponseJson(response)))
 
@@ -7461,6 +7957,7 @@ function CoAttainmentCalculationPage() {
       setUploadedLevelPointRows(data[2]?.row_data?.levelPointRows || {})
       setRubricRows(data[3] || [])
       setExternalMarkRows(data[4] || [])
+      setInternalMarkRows((data[5] || []).filter((row) => String(row.academic_year || '') === selection.academic_year))
       if (!options.silent) {
         setMessage('CO Attainment source data loaded.')
       }
@@ -7477,20 +7974,23 @@ function CoAttainmentCalculationPage() {
       setMessage('')
     }
 
-    if (!markRows.length || !articulationRows.length) {
+    if ((!internalMarkRows.length && !markRows.length) || !articulationRows.length) {
       if (!options.silent) {
-        setError('Mark Attainment and Articulation Matrix data are required.')
+        setError('Internal Mark Upload or Mark Attainment data and Articulation Matrix data are required.')
       }
       return
     }
 
-    const nextRows = coCodeOptions.map((coCode) => {
+    const articulationCoCodes = [...new Set(
+      articulationRows.map((row) => normalizeCourseOutcomeCode(row.co_code)).filter(Boolean),
+    )]
+    const nextRows = (articulationCoCodes.length ? articulationCoCodes : coCodeOptions).map((coCode) => {
       let articulationTotal = 0
       let weightedLevelPointTotal = 0
       const values = coAttainmentColumns.reduce((mapping, column) => {
         const articulationLevel = Number(articulationByCo[coCode]?.[column.key] || 0)
         const levelPoint = Number(displayLevelPointRows[column.key] || 0)
-        mapping[column.key] = articulationLevel && levelPoint ? articulationLevel * levelPoint : ''
+        mapping[column.key] = articulationLevel || ''
 
         if (articulationLevel) {
           articulationTotal += articulationLevel
@@ -7733,6 +8233,14 @@ function CoAttainmentCalculationPage() {
           <p className="eyebrow">Dashboard / OBE Calculation / CO Attainment</p>
           <h3>CO Attainment Calculation</h3>
         </div>
+        <button
+          type="button"
+          className="save-button"
+          onClick={saveCoAttainmentCalculation}
+          disabled={isSaving || isLoading}
+        >
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
       </div>
 
       <div className="mapping-selector-grid">
@@ -7780,28 +8288,13 @@ function CoAttainmentCalculationPage() {
             ))}
           </select>
         </label>
-        <label>
-          <span>Academic Year</span>
-          <select name="academic_year" value={selection.academic_year} onChange={updateSelection}>
-            {academicYears.map((year) => (
-              <option key={year}>{year}</option>
-            ))}
-          </select>
-        </label>
       </div>
 
-      <div className="mapping-actions">
-        <button type="button" className="save-button" onClick={saveCoAttainmentCalculation} disabled={isSaving}>
-          Save
-        </button>
-        <label className="file-action">
-          Upload Excel
-          <input type="file" accept=".xlsx,.xls" onChange={uploadCoAttainmentExcel} />
-        </label>
-        <button type="button" className="reset-button" onClick={exportCoAttainmentFormat}>
-          Export Excel
-        </button>
-      </div>
+      {selection.course_id && <div className={`notice ${selection.academic_year ? 'success' : 'error'}`}>
+        {selection.academic_year
+          ? `Academic Year: ${selection.academic_year} (automatically selected from Course)`
+          : 'Academic Year is not configured for the selected Course Semester.'}
+      </div>}
 
       {isLoading && <div className="notice success">Loading CO Attainment data...</div>}
       {(message || error) && (
@@ -7812,28 +8305,25 @@ function CoAttainmentCalculationPage() {
 
       <div className="table-panel">
         <div className="table-heading">
-          <h4>CO Attainment Excel Format</h4>
-          <span>Internal assessment tools</span>
+          <h4>CO Attainment Calculation</h4>
+          <span>{calculatedRows.length} records</span>
         </div>
-        <div className="table-wrap mark-attainment-wrap">
-          <table className="mark-attainment-table co-attainment-table">
+        <div className="table-wrap">
+          <table className="co-attainment-assessment-table">
             <thead>
               <tr>
-                <th>COURSE<br />OUTCOME</th>
-                {coAttainmentColumns.map((column) => (
-                  <th key={column.key}>{column.label}</th>
-                ))}
-                {coAttainmentResultColumns.map((column) => (
-                  <th key={column.key}>{column.label}</th>
-                ))}
+                <th>COURSE OUTCOME</th>
+                {coAttainmentColumns.map((column) => <th key={column.key}>{column.label}</th>)}
+                <th>ATTAINMENT LEVEL<br />(INTERNAL)</th>
+                <th>END SEM</th>
+                <th>ATTAINMENT LEVEL<br />(EXTERNAL)</th>
+                <th>OVERALL</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <th>LEVEL</th>
-                {coAttainmentColumns.map((column) => (
-                  <td key={`level-${column.key}`}>{displayLevelRows[column.key] || ''}</td>
-                ))}
+                {coAttainmentColumns.map((column) => <td key={`level-${column.key}`}>{displayLevelRows[column.key] || ''}</td>)}
                 <td></td>
                 <td>{externalAttainment.level}</td>
                 <td></td>
@@ -7841,29 +8331,26 @@ function CoAttainmentCalculationPage() {
               </tr>
               <tr>
                 <th>LEVEL POINT</th>
-                {coAttainmentColumns.map((column) => (
-                  <td key={`point-${column.key}`}>{displayLevelPointRows[column.key] ?? ''}</td>
-                ))}
+                {coAttainmentColumns.map((column) => <td key={`level-point-${column.key}`}>{displayLevelPointRows[column.key] ?? ''}</td>)}
                 <td></td>
                 <td>{externalAttainment.levelPoint}</td>
                 <td></td>
                 <td></td>
               </tr>
-              {visibleCoRows.map((row) => (
-                <tr key={row.co_code}>
-                  <th>{row.co_code}</th>
-                  {coAttainmentColumns.map((column) => (
-                    <td key={`${row.co_code}-${column.key}`}>{row.values[column.key] ?? ''}</td>
-                  ))}
-                  {coAttainmentResultColumns.map((column) => (
-                    <td key={`${row.co_code}-${column.key}`}>{row.results?.[column.key] ?? ''}</td>
-                  ))}
-                </tr>
-              ))}
+              {calculatedRows.map((row) => <tr key={row.co_code}>
+                <th>{row.co_code}</th>
+                {coAttainmentColumns.map((column) => <td key={`${row.co_code}-${column.key}`}>{row.values?.[column.key] ?? ''}</td>)}
+                <td>{row.results?.internal_attainment === '' || row.results?.internal_attainment === undefined ? '' : Number(row.results.internal_attainment).toFixed(2)}</td>
+                <td>{row.results?.end_sem ?? ''}</td>
+                <td>{row.results?.external_attainment === '' || row.results?.external_attainment === undefined ? '' : Number(row.results.external_attainment).toFixed(2)}</td>
+                <td>{row.results?.overall === '' || row.results?.overall === undefined ? '' : Number(row.results.overall).toFixed(2)}</td>
+              </tr>)}
+              {!calculatedRows.length && <tr><td colSpan={coAttainmentColumns.length + 5} className="empty-cell">Select a Course to load CO Attainment data.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
+
     </section>
   )
 }
@@ -7994,6 +8481,8 @@ function InternalMarkUploadPage() {
     async function loadSavedRows() {
       if (!selection.course_id || !selection.academic_year) {
         setSavedRows([])
+        setCalculationSummary(null)
+        setPreviousAverageInputs({ minus_two: '', minus_one: '' })
         return
       }
 
@@ -8402,6 +8891,8 @@ function ExternalMarkUploadPage() {
   })
   const [markRows, setMarkRows] = useState([])
   const [savedRows, setSavedRows] = useState([])
+  const [calculationSummary, setCalculationSummary] = useState(null)
+  const [previousAverageInputs, setPreviousAverageInputs] = useState({ minus_two: '', minus_one: '' })
   const [studentRoster, setStudentRoster] = useState([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -8442,13 +8933,26 @@ function ExternalMarkUploadPage() {
     [courses, selection.course_id],
   )
 
-  const uploadedOrSavedRows = markRows.length ? markRows : savedRows
-  const visibleMarkRows = uploadedOrSavedRows
+  function academicYearWithOffset(offset) {
+    const startYear = Number(String(selection.academic_year || '').slice(0, 4))
+    if (!Number.isInteger(startYear)) return ''
+    const offsetStartYear = startYear + offset
+    return `${offsetStartYear}-${String(offsetStartYear + 1).slice(-2)}`
+  }
+
+  const minusTwoAcademicYear = academicYearWithOffset(-2)
+  const minusOneAcademicYear = academicYearWithOffset(-1)
+  const hasPreviousAverageInputs = previousAverageInputs.minus_two !== '' &&
+    previousAverageInputs.minus_one !== '' &&
+    Number.isFinite(Number(previousAverageInputs.minus_two)) &&
+    Number.isFinite(Number(previousAverageInputs.minus_one))
+
+  const visibleMarkRows = markRows.length ? markRows : savedRows
   const calculationRows = useMemo(
     () => visibleMarkRows.filter((row) => row.percent_mark !== null && row.percent_mark !== '' && Number.isFinite(Number(row.percent_mark))),
     [visibleMarkRows],
   )
-  const averageMark = useMemo(() => {
+  const calculatedAverageMark = useMemo(() => {
     if (!calculationRows.length) {
       return 0
     }
@@ -8456,28 +8960,50 @@ function ExternalMarkUploadPage() {
     return calculationRows.reduce((total, row) => total + Number(row.percent_mark || 0), 0) / calculationRows.length
   }, [calculationRows])
 
-  const targetAverage = averageMark
+  const averageMark = Number.isFinite(Number(calculationSummary?.current_average))
+    ? Number(calculationSummary.current_average)
+    : calculatedAverageMark
+  const targetAverage = hasPreviousAverageInputs
+    ? (Number(previousAverageInputs.minus_two) + Number(previousAverageInputs.minus_one)) / 2
+    : Number.isFinite(Number(calculationSummary?.target_average))
+    ? Number(calculationSummary.target_average)
+    : averageMark
   const regdNoCount = useMemo(
     () => calculationRows.filter((row) =>
       String(row.regd_no || '').trim(),
     ).length,
     [calculationRows],
   )
-  const studentsAboveTarget = useMemo(
+  const calculatedStudentsAboveTarget = useMemo(
     () => calculationRows.filter((row) =>
       String(row.regd_no || '').trim() && Number(row.percent_mark || 0) >= targetAverage,
     ).length,
     [calculationRows, targetAverage],
   )
-  const attainmentValue = useMemo(() => {
+  const studentsAboveTarget = hasPreviousAverageInputs
+    ? calculatedStudentsAboveTarget
+    : Number.isFinite(Number(calculationSummary?.students_attained))
+    ? Number(calculationSummary.students_attained)
+    : calculatedStudentsAboveTarget
+  const totalStudentsAppeared = hasPreviousAverageInputs
+    ? regdNoCount
+    : Number.isFinite(Number(calculationSummary?.total_students))
+    ? Number(calculationSummary.total_students)
+    : regdNoCount
+  const calculatedAttainmentValue = useMemo(() => {
     if (!regdNoCount) {
       return 0
     }
 
-    return (studentsAboveTarget / regdNoCount) * 100
-  }, [regdNoCount, studentsAboveTarget])
-  const attainmentLevel = useMemo(() => {
-    if (!regdNoCount) {
+    return (calculatedStudentsAboveTarget / regdNoCount) * 100
+  }, [regdNoCount, calculatedStudentsAboveTarget])
+  const attainmentValue = hasPreviousAverageInputs
+    ? calculatedAttainmentValue
+    : Number.isFinite(Number(calculationSummary?.attainment_percentage))
+    ? Number(calculationSummary.attainment_percentage)
+    : calculatedAttainmentValue
+  const calculatedAttainmentLevel = useMemo(() => {
+    if (!totalStudentsAppeared) {
       return '-'
     }
 
@@ -8488,8 +9014,27 @@ function ExternalMarkUploadPage() {
     })
 
     return matchedLevel?.code || '-'
-  }, [attainmentValue, regdNoCount])
-  const attainmentLevelPoint = attainmentLevelPointMap[attainmentLevel] || '-'
+  }, [attainmentValue, totalStudentsAppeared])
+  const attainmentLevel = hasPreviousAverageInputs ? calculatedAttainmentLevel : calculationSummary?.level || calculatedAttainmentLevel
+  const attainmentLevelPoint = !hasPreviousAverageInputs && Number.isFinite(Number(calculationSummary?.level_point))
+    ? Number(calculationSummary.level_point)
+    : attainmentLevelPointMap[attainmentLevel] || '-'
+  const currentCalculationSummary = {
+    year_averages: [
+      { academic_year: selection.academic_year, average: averageMark },
+      ...(hasPreviousAverageInputs ? [
+        { academic_year: minusOneAcademicYear, average: Number(previousAverageInputs.minus_one) },
+        { academic_year: minusTwoAcademicYear, average: Number(previousAverageInputs.minus_two) },
+      ] : calculationSummary?.year_averages?.slice(1) || []),
+    ].filter((row) => row.academic_year && Number.isFinite(Number(row.average))),
+    current_average: averageMark,
+    target_average: targetAverage,
+    students_attained: studentsAboveTarget,
+    total_students: totalStudentsAppeared,
+    attainment_percentage: attainmentValue,
+    level: attainmentLevel,
+    level_point: attainmentLevelPoint,
+  }
 
   useEffect(() => {
     async function loadMasters() {
@@ -8569,14 +9114,20 @@ function ExternalMarkUploadPage() {
           throw new Error(data?.detail || data?.error || 'Unable to load external marks.')
         }
 
+        const savedSummary = data?.[0]?.calculation_summary || null
         setSavedRows(data || [])
+        setCalculationSummary(savedSummary)
+        setPreviousAverageInputs({
+          minus_two: savedSummary?.year_averages?.find((row) => row.academic_year === minusTwoAcademicYear)?.average ?? '',
+          minus_one: savedSummary?.year_averages?.find((row) => row.academic_year === minusOneAcademicYear)?.average ?? '',
+        })
       } catch (loadError) {
         setError(loadError.message)
       }
     }
 
     loadSavedRows()
-  }, [selection.academic_year, selection.course_id])
+  }, [minusOneAcademicYear, minusTwoAcademicYear, selection.academic_year, selection.course_id])
 
   function updateSelection(event) {
     const { name, value } = event.target
@@ -8606,6 +9157,8 @@ function ExternalMarkUploadPage() {
       return next
     })
     setMarkRows([])
+    setCalculationSummary(null)
+    setPreviousAverageInputs({ minus_two: '', minus_one: '' })
     setMessage('')
     setError('')
   }
@@ -8628,7 +9181,56 @@ function ExternalMarkUploadPage() {
         try {
           const workbook = XLSX.read(loadEvent.target.result, { type: 'array' })
           const sheet = workbook.Sheets[workbook.SheetNames[0]]
-          const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+          const sheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true })
+          const columnCount = Math.max(0, ...sheetRows.slice(0, 2).map((row) => row.length))
+          const combinedHeaders = Array.from({ length: columnCount }, (_item, index) =>
+            normalizeHeader(`${sheetRows[0]?.[index] || ''} ${sheetRows[1]?.[index] || ''}`),
+          )
+          const findColumn = (...names) => combinedHeaders.findIndex((header) =>
+            names.some((name) => header.includes(normalizeHeader(name))),
+          )
+          const slNoColumn = findColumn('slno', 'sn', 'serialno')
+          const regdNoColumn = findColumn('regdno', 'registrationno', 'regno', 'rollno')
+          const studentNameColumn = findColumn('studentname', 'name')
+          const sgpaColumn = findColumn('sgpa')
+          const gradeColumn = findColumn('grade')
+          const baseMarkColumn = combinedHeaders.findIndex((header) =>
+            header.includes('basemark') || header.includes('percentmark'),
+          )
+          const hasSecondHeaderRow = combinedHeaders.some((header) => header.includes('basemark'))
+          const firstDataRowIndex = hasSecondHeaderRow ? 2 : 1
+          const summaryStartIndex = sheetRows.findIndex((row, index) =>
+            index >= firstDataRowIndex && /^AVERAGE\s*-/i.test(String(row[slNoColumn >= 0 ? slNoColumn : 0] || '').trim()),
+          )
+          const studentRows = sheetRows.slice(
+            firstDataRowIndex,
+            summaryStartIndex >= 0 ? summaryStartIndex : sheetRows.length,
+          )
+          const summaryEntries = (summaryStartIndex >= 0 ? sheetRows.slice(summaryStartIndex) : [])
+            .map((row) => {
+              const label = String(row[slNoColumn >= 0 ? slNoColumn : 0] || '').trim()
+              const value = [...row].reverse().find((item) => String(item ?? '').trim() !== '' && item !== label)
+              return { label, value }
+            })
+            .filter((entry) => entry.label)
+          const summaryValue = (pattern) => summaryEntries.find((entry) => pattern.test(entry.label))?.value
+          const yearAverages = summaryEntries
+            .filter((entry) => /^AVERAGE\s*-\s*\d{4}-\d{2}$/i.test(entry.label))
+            .map((entry) => ({
+              academic_year: entry.label.replace(/^AVERAGE\s*-\s*/i, '').trim(),
+              average: Number(entry.value),
+            }))
+            .filter((entry) => Number.isFinite(entry.average))
+          const uploadedSummary = summaryEntries.length ? {
+            year_averages: yearAverages,
+            current_average: yearAverages[0]?.average,
+            target_average: Number(summaryValue(/^TARGET AVERAGE/i)),
+            students_attained: Number(summaryValue(/^NO\. OF STUDENTS ATTAINED/i)),
+            total_students: Number(summaryValue(/^TOTAL STUDENTS APPEARED/i)),
+            attainment_percentage: Number(summaryValue(/^% ATTAINMENT/i)),
+            level: String(summaryValue(/^LEVEL$/i) || '').trim().toUpperCase(),
+            level_point: Number(summaryValue(/^LEVEL POINT$/i)),
+          } : null
           const rosterByRegistration = new Map(
             studentRoster.map((student) => [
               String(student.registration_no || student.regd_no || '').trim().toUpperCase(),
@@ -8639,23 +9241,22 @@ function ExternalMarkUploadPage() {
           const duplicateRegistrations = new Set()
           const seenRegistrations = new Set()
           const invalidRows = []
-          const parsedRows = rows
+          const parsedRows = studentRows
             .map((row, index) => {
-              const rawSgpa = getSheetValue(row, ['sgpa'])
+              const rawSgpa = sgpaColumn >= 0 ? row[sgpaColumn] : ''
               const sgpa = String(rawSgpa).trim() === '' ? null : Number(rawSgpa)
-              const excelGrade = String(getSheetValue(row, ['grade'])).trim()
+              const excelGrade = String(gradeColumn >= 0 ? row[gradeColumn] : '').trim()
               const grade = normalizeGradeForDisplay(excelGrade || (sgpa !== null ? sgpaToGrade(sgpa) : ''))
-              const percentMark = excelGrade
-                ? gradeToPercentMark(excelGrade)
+              const uploadedBaseMark = baseMarkColumn >= 0 ? Number(row[baseMarkColumn]) : NaN
+              const percentMark = Number.isFinite(uploadedBaseMark)
+                ? uploadedBaseMark
+                : excelGrade
+                  ? gradeToPercentMark(excelGrade)
                 : sgpa !== null
                   ? sgpaToPercentMark(sgpa)
                   : undefined
-              const studentName = String(
-                getSheetValue(row, ['studentname', 'name']),
-              ).trim()
-              const regdNo = String(
-                getSheetValue(row, ['regdno', 'registrationno', 'regno', 'rollno']),
-              ).trim()
+              const studentName = String(studentNameColumn >= 0 ? row[studentNameColumn] : '').trim()
+              const regdNo = String(regdNoColumn >= 0 ? row[regdNoColumn] : '').trim()
               const normalizedRegdNo = regdNo.toUpperCase()
               const masterStudent = rosterByRegistration.get(normalizedRegdNo)
 
@@ -8671,12 +9272,12 @@ function ExternalMarkUploadPage() {
               }
 
               if (!regdNo || !studentName || !grade || !Number.isFinite(percentMark)) {
-                invalidRows.push(index + 2)
+                invalidRows.push(firstDataRowIndex + index + 1)
                 return null
               }
 
               return {
-                sl_no: Number(getSheetValue(row, ['slno', 'serialno'])) || index + 1,
+                sl_no: Number(slNoColumn >= 0 ? row[slNoColumn] : '') || index + 1,
                 regd_no: regdNo,
                 student_name: masterStudent?.student_name || studentName,
                 sgpa,
@@ -8693,6 +9294,12 @@ function ExternalMarkUploadPage() {
               }
             })
             .filter(Boolean)
+
+          if (uploadedSummary && Object.values(uploadedSummary).some((value) =>
+            typeof value === 'number' && Number.isNaN(value),
+          )) {
+            throw new Error('The lower Excel calculation section is incomplete or contains invalid values.')
+          }
 
           if (!studentRoster.length) {
             throw new Error('No student master data found for the selected Department and Programme.')
@@ -8715,7 +9322,12 @@ function ExternalMarkUploadPage() {
           }
 
           setMarkRows(parsedRows)
-          setMessage(`${parsedRows.length} external mark rows validated and calculated.`)
+          setCalculationSummary(uploadedSummary)
+          setPreviousAverageInputs({
+            minus_two: uploadedSummary?.year_averages?.find((row) => row.academic_year === minusTwoAcademicYear)?.average ?? '',
+            minus_one: uploadedSummary?.year_averages?.find((row) => row.academic_year === minusOneAcademicYear)?.average ?? '',
+          })
+          setMessage(`${parsedRows.length} external mark rows and the lower Excel calculation section were loaded.`)
         } catch (parseError) {
           setError(parseError.message)
         }
@@ -8754,6 +9366,11 @@ function ExternalMarkUploadPage() {
       return
     }
 
+    if (!hasPreviousAverageInputs) {
+      setError(`Enter the average values for ${minusTwoAcademicYear} and ${minusOneAcademicYear} before saving.`)
+      return
+    }
+
     if (!markRows.length) {
       setError('Import external marks Excel before saving.')
       return
@@ -8774,6 +9391,7 @@ function ExternalMarkUploadPage() {
           average_mark: Number(averageMark.toFixed(2)),
           target_average: Number(targetAverage.toFixed(2)),
           attainment_value: Number(attainmentValue.toFixed(5)),
+          calculation_summary: currentCalculationSummary,
           rows: markRows,
         }),
       })
@@ -8783,8 +9401,19 @@ function ExternalMarkUploadPage() {
         throw new Error(data?.detail || data?.error || 'Unable to save external marks.')
       }
 
-      setMessage(data?.message || 'External marks saved.')
-      setSavedRows(markRows)
+      const verifyResponse = await fetch(
+        `/api/external-marks-upload?course_id=${selection.course_id}&academic_year=${encodeURIComponent(selection.academic_year)}`,
+      )
+      const verifiedRows = await readResponseJson(verifyResponse)
+      if (!verifyResponse.ok) {
+        throw new Error(verifiedRows?.detail || verifiedRows?.error || 'External marks were saved but could not be verified.')
+      }
+      if (verifiedRows.length !== markRows.length) {
+        throw new Error(`Save verification failed: expected ${markRows.length} rows but found ${verifiedRows.length} rows in external_marks_upload.`)
+      }
+
+      setMessage(`${verifiedRows.length} external mark rows saved and verified in external_marks_upload.`)
+      setSavedRows(verifiedRows)
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -8851,6 +9480,31 @@ function ExternalMarkUploadPage() {
           <input type="file" accept=".xlsx,.xls,.csv" onChange={parseExternalMarks} />
         </label>
       </div>
+
+      {selection.academic_year && <div className="mapping-selector-grid external-average-input-grid">
+        <label>
+          <span>AVERAGE - {minusTwoAcademicYear}</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={previousAverageInputs.minus_two}
+            onChange={(event) => setPreviousAverageInputs((current) => ({ ...current, minus_two: event.target.value }))}
+            placeholder={`Enter ${minusTwoAcademicYear} average`}
+          />
+        </label>
+        <label>
+          <span>AVERAGE - {minusOneAcademicYear}</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={previousAverageInputs.minus_one}
+            onChange={(event) => setPreviousAverageInputs((current) => ({ ...current, minus_one: event.target.value }))}
+            placeholder={`Enter ${minusOneAcademicYear} average`}
+          />
+        </label>
+      </div>}
 
       {selection.semester_id && (
         <div className={`notice ${selection.academic_year ? 'success' : 'error'}`}>
@@ -8930,32 +9584,35 @@ function ExternalMarkUploadPage() {
               )}
               {!!calculationRows.length && (
                 <>
+                  {(currentCalculationSummary.year_averages.length
+                    ? currentCalculationSummary.year_averages
+                    : [{ academic_year: selection.academic_year, average: averageMark }]
+                  ).map((row) => <tr className="summary-row external-summary-row" key={row.academic_year}>
+                    <td colSpan="6">AVERAGE - {row.academic_year}</td>
+                    <td>{Number(row.average).toFixed(2)}</td>
+                  </tr>)}
                   <tr className="summary-row external-summary-row">
-                    <td colSpan="6">AVERAGE</td>
-                    <td>{averageMark.toFixed(2)}</td>
-                  </tr>
-                  <tr className="summary-row external-summary-row">
-                    <td colSpan="6">AVERAGE - {selection.academic_year}</td>
-                    <td>{averageMark.toFixed(2)}</td>
-                  </tr>
-                  <tr className="summary-row external-summary-row">
-                    <td colSpan="6">TARGET AVERAGE = (AVERAGE OF LAST ONE YEARS)</td>
+                    <td colSpan="6">TARGET AVERAGE = (AVERAGE OF LAST 2 YEARS)</td>
                     <td>{targetAverage.toFixed(2)}</td>
                   </tr>
                   <tr className="summary-row external-summary-row">
-                    <td colSpan="6">No. of Student Above Target Average</td>
+                    <td colSpan="6">NO. OF STUDENTS ATTAINED THE TARGET</td>
                     <td>{studentsAboveTarget}</td>
                   </tr>
                   <tr className="summary-row external-summary-row">
-                    <td colSpan="6">Percentage (%)</td>
-                    <td>{attainmentValue.toFixed(2)}</td>
+                    <td colSpan="6">TOTAL STUDENTS APPEARED</td>
+                    <td>{totalStudentsAppeared}</td>
                   </tr>
                   <tr className="summary-row external-summary-row">
-                    <td colSpan="6">Level</td>
+                    <td colSpan="6">% ATTAINMENT</td>
+                    <td>{hasPreviousAverageInputs ? Math.round(attainmentValue) : attainmentValue.toFixed(2)}</td>
+                  </tr>
+                  <tr className="summary-row external-summary-row">
+                    <td colSpan="6">LEVEL</td>
                     <td>{attainmentLevel}</td>
                   </tr>
                   <tr className="summary-row external-summary-row">
-                    <td colSpan="6">Level Point</td>
+                    <td colSpan="6">LEVEL POINT</td>
                     <td>{attainmentLevelPoint}</td>
                   </tr>
                 </>
@@ -9650,7 +10307,7 @@ function App() {
         {activeItem === 'Departments' ? (
           <DepartmentsPage />
         ) : activeItem === 'Department Vision and Mission' ? (
-          <DepartmentVisionMissionPage />
+          <DepartmentVisionMissionPage user={auth.user} />
         ) : activeItem === 'Programmes' ? (
           <ProgrammesPage />
         ) : activeItem === 'Admission Batch Management' ? (
@@ -9662,13 +10319,15 @@ function App() {
         ) : activeItem === 'Set Target' ? (
           <AssessmentsPage />
         ) : activeItem === 'Course Outcomes' ? (
-          <CourseOutcomesPage onMapping={() => navigateTo('CO-PO Mapping')} />
+          <CourseOutcomesPage />
         ) : activeItem === 'PO/PSO/PEO' ? (
-          <ProgrammeOutcomesPage />
+          <ProgrammeOutcomesPage user={auth.user} />
         ) : activeItem === 'CO-PO Mapping' ? (
-          <CoPoMappingPage />
+          <CoPoMappingPage user={auth.user} />
         ) : activeItem === 'CO-PO Attainment' ? (
           <CoPoAttainmentPage />
+        ) : activeItem === 'CO-PSO Attainment' ? (
+          <CoPsoAttainmentPage />
         ) : activeItem === 'Articulation Matrix' ? (
           <ArticulationMatrixPage />
         ) : activeItem === 'Mark Attainment' ? (
@@ -9676,7 +10335,7 @@ function App() {
         ) : activeItem === 'CO Attainment Calculation' ? (
           <CoAttainmentCalculationPage />
         ) : activeItem === 'University Mapping Question' ? (
-          <UniversityMappingQuestionPage />
+          <UniversityMappingQuestionPage user={auth.user} />
         ) : activeItem === 'Internal Mark Upload' ? (
           <InternalMarkUploadPage />
         ) : activeItem === 'External Mark Upload' ? (

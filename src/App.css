@@ -1043,6 +1043,13 @@
   pointer-events: none;
 }
 
+.save-button:disabled,
+.row-actions button:disabled,
+.file-action.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .notice {
   border-radius: 8px;
   font-size: 14px;
@@ -1311,6 +1318,10 @@ th {
 td {
   color: #25324a;
   font-size: 14px;
+}
+
+.year-wise-levels-table tbody tr.year-separator td {
+  border-top: 3px solid #8da0b8;
 }
 
 .admission-batches-panel tbody tr:not(:last-child) td {

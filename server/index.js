@@ -1862,6 +1862,17 @@ async function ensureCourseOutcomesTable() {
           ON DELETE SET NULL;
       END IF;
 
+      IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'course_outcomes'::regclass
+          AND conname = 'course_outcomes_course_id_fkey'
+          AND confdeltype <> 'c'
+      ) THEN
+        ALTER TABLE course_outcomes
+          DROP CONSTRAINT course_outcomes_course_id_fkey;
+      END IF;
+
       IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
@@ -2298,6 +2309,7 @@ async function ensureExternalMarksUploadTable() {
       average_mark NUMERIC(7, 2) NOT NULL,
       target_average NUMERIC(7, 2) NOT NULL,
       attainment_value NUMERIC(10, 5) NOT NULL,
+      calculation_summary JSONB DEFAULT '{}'::jsonb,
       uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -2320,6 +2332,7 @@ async function ensureExternalMarksUploadTable() {
       ADD COLUMN IF NOT EXISTS average_mark NUMERIC(7, 2),
       ADD COLUMN IF NOT EXISTS target_average NUMERIC(7, 2),
       ADD COLUMN IF NOT EXISTS attainment_value NUMERIC(10, 5),
+      ADD COLUMN IF NOT EXISTS calculation_summary JSONB DEFAULT '{}'::jsonb,
       ADD COLUMN IF NOT EXISTS uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   `);
 }
@@ -2452,6 +2465,68 @@ async function ensureCoAttainmentCalculationTable() {
       ADD COLUMN IF NOT EXISTS batch VARCHAR(40),
       ADD COLUMN IF NOT EXISTS internal_weight NUMERIC(6, 2) DEFAULT 80,
       ADD COLUMN IF NOT EXISTS external_weight NUMERIC(6, 2) DEFAULT 20,
+      ADD COLUMN IF NOT EXISTS row_data JSONB DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  `);
+}
+
+async function ensureCoPoAttainmentTable() {
+  await ensureCoursesTable();
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS co_po_attainment (
+      co_po_attainment_id SERIAL PRIMARY KEY,
+      department_id INTEGER REFERENCES department(department_id) ON DELETE SET NULL,
+      programme_id INTEGER REFERENCES programmes(programme_id) ON DELETE SET NULL,
+      semester_id INTEGER REFERENCES semesters(semester_id) ON DELETE SET NULL,
+      course_id INTEGER REFERENCES courses(course_id) ON DELETE CASCADE,
+      academic_year VARCHAR(20) NOT NULL,
+      row_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (course_id, academic_year)
+    )
+  `);
+
+  await pool.query(`
+    ALTER TABLE co_po_attainment
+      ADD COLUMN IF NOT EXISTS department_id INTEGER,
+      ADD COLUMN IF NOT EXISTS programme_id INTEGER,
+      ADD COLUMN IF NOT EXISTS semester_id INTEGER,
+      ADD COLUMN IF NOT EXISTS course_id INTEGER,
+      ADD COLUMN IF NOT EXISTS academic_year VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS row_data JSONB DEFAULT '{}'::jsonb,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  `);
+}
+
+async function ensureCoPsoAttainmentTable() {
+  await ensureCoursesTable();
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS co_pso_attainment (
+      co_pso_attainment_id SERIAL PRIMARY KEY,
+      department_id INTEGER REFERENCES department(department_id) ON DELETE SET NULL,
+      programme_id INTEGER REFERENCES programmes(programme_id) ON DELETE SET NULL,
+      semester_id INTEGER REFERENCES semesters(semester_id) ON DELETE SET NULL,
+      course_id INTEGER REFERENCES courses(course_id) ON DELETE CASCADE,
+      academic_year VARCHAR(20) NOT NULL,
+      row_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (course_id, academic_year)
+    )
+  `);
+
+  await pool.query(`
+    ALTER TABLE co_pso_attainment
+      ADD COLUMN IF NOT EXISTS department_id INTEGER,
+      ADD COLUMN IF NOT EXISTS programme_id INTEGER,
+      ADD COLUMN IF NOT EXISTS semester_id INTEGER,
+      ADD COLUMN IF NOT EXISTS course_id INTEGER,
+      ADD COLUMN IF NOT EXISTS academic_year VARCHAR(20),
       ADD COLUMN IF NOT EXISTS row_data JSONB DEFAULT '{}'::jsonb,
       ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -3424,7 +3499,7 @@ app.put('/api/courses/:courseId', async (request, response) => {
 
 app.delete('/api/courses/:courseId', async (request, response) => {
   try {
-    await ensureCoursesTable();
+    await ensureCourseOutcomesTable();
     const result = await pool.query(
       'DELETE FROM courses WHERE course_id = $1 RETURNING course_id',
       [request.params.courseId],
@@ -4672,6 +4747,7 @@ app.post('/api/external-marks-upload', async (request, response) => {
     average_mark: averageMark,
     target_average: targetAverage,
     attainment_value: attainmentValue,
+    calculation_summary: calculationSummary = {},
     rows = [],
   } = request.body;
 
@@ -4732,9 +4808,10 @@ app.post('/api/external-marks-upload', async (request, response) => {
             percent_mark,
             average_mark,
             target_average,
-            attainment_value
+            attainment_value,
+            calculation_summary
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         `,
         [
           departmentId,
@@ -4753,6 +4830,7 @@ app.post('/api/external-marks-upload', async (request, response) => {
           Number(averageMark),
           Number(targetAverage),
           Number(attainmentValue),
+          JSON.stringify(calculationSummary || {}),
         ],
       );
     }
@@ -4930,15 +5008,15 @@ app.get('/api/co-attainment-calculation', async (request, response) => {
   const academicYear = String(request.query.academic_year || '').trim();
   const batch = String(request.query.batch || '').trim();
 
-  if (!Number.isInteger(courseId) || !academicYear || !batch) {
-    response.status(400).json({ error: 'Course ID, Academic Year, and Batch are required.' });
+  if (!Number.isInteger(courseId) || !academicYear) {
+    response.status(400).json({ error: 'Course ID and Academic Year are required.' });
     return;
   }
 
   try {
     await ensureCoAttainmentCalculationTable();
     const result = await pool.query(
-      `
+      batch ? `
         SELECT
           calculation_id,
           department_id,
@@ -4956,8 +5034,16 @@ app.get('/api/co-attainment-calculation', async (request, response) => {
           AND batch = $3
         ORDER BY calculation_id DESC
         LIMIT 1
+      ` : `
+        SELECT
+          calculation_id, department_id, programme_id, semester_id, course_id,
+          academic_year, batch, internal_weight, external_weight, row_data
+        FROM co_attainment_calculation
+        WHERE course_id = $1 AND academic_year = $2
+        ORDER BY updated_at DESC, calculation_id DESC
+        LIMIT 1
       `,
-      [courseId, academicYear, batch],
+      batch ? [courseId, academicYear, batch] : [courseId, academicYear],
     );
 
     response.json(result.rows[0] || null);
@@ -5036,6 +5122,103 @@ app.post('/api/co-attainment-calculation', async (request, response) => {
       error: 'Unable to save CO Attainment Calculation.',
       detail: error.message,
     });
+  }
+});
+
+app.post('/api/co-po-attainment', async (request, response) => {
+  const {
+    department_id: departmentId,
+    programme_id: programmeId,
+    semester_id: semesterId,
+    course_id: courseId,
+    academic_year: academicYear,
+    row_data: rowData = {},
+  } = request.body;
+
+  if (!departmentId || !programmeId || !semesterId || !courseId || !String(academicYear || '').trim()) {
+    response.status(400).json({
+      error: 'Department, Programme, Semester, Course, and Academic Year are required.',
+    });
+    return;
+  }
+
+  try {
+    await ensureCoPoAttainmentTable();
+    const result = await pool.query(
+      `
+        INSERT INTO co_po_attainment (
+          department_id, programme_id, semester_id, course_id, academic_year, row_data, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, CURRENT_TIMESTAMP)
+        ON CONFLICT (course_id, academic_year)
+        DO UPDATE SET
+          department_id = EXCLUDED.department_id,
+          programme_id = EXCLUDED.programme_id,
+          semester_id = EXCLUDED.semester_id,
+          row_data = EXCLUDED.row_data,
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING co_po_attainment_id
+      `,
+      [
+        Number(departmentId), Number(programmeId), Number(semesterId), Number(courseId),
+        String(academicYear).trim(), JSON.stringify(rowData || {}),
+      ],
+    );
+
+    response.status(201).json({
+      message: 'CO-PO Attainment saved.',
+      co_po_attainment_id: result.rows[0].co_po_attainment_id,
+    });
+  } catch (error) {
+    response.status(400).json({ error: 'Unable to save CO-PO Attainment.', detail: error.message });
+  }
+});
+
+app.post('/api/co-pso-attainment', async (request, response) => {
+  const {
+    department_id: departmentId,
+    programme_id: programmeId,
+    semester_id: semesterId,
+    course_id: courseId,
+    academic_year: academicYear,
+    row_data: rowData = {},
+  } = request.body;
+
+  if (!departmentId || !programmeId || !semesterId || !courseId || !String(academicYear || '').trim()) {
+    response.status(400).json({
+      error: 'Department, Programme, Semester, Course, and Academic Year are required.',
+    });
+    return;
+  }
+
+  try {
+    await ensureCoPsoAttainmentTable();
+    const result = await pool.query(
+      `
+        INSERT INTO co_pso_attainment (
+          department_id, programme_id, semester_id, course_id, academic_year, row_data, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, CURRENT_TIMESTAMP)
+        ON CONFLICT (course_id, academic_year)
+        DO UPDATE SET
+          department_id = EXCLUDED.department_id,
+          programme_id = EXCLUDED.programme_id,
+          semester_id = EXCLUDED.semester_id,
+          row_data = EXCLUDED.row_data,
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING co_pso_attainment_id
+      `,
+      [
+        Number(departmentId), Number(programmeId), Number(semesterId), Number(courseId),
+        String(academicYear).trim(), JSON.stringify(rowData || {}),
+      ],
+    );
+    response.status(201).json({
+      message: 'CO-PSO Attainment saved.',
+      co_pso_attainment_id: result.rows[0].co_pso_attainment_id,
+    });
+  } catch (error) {
+    response.status(400).json({ error: 'Unable to save CO-PSO Attainment.', detail: error.message });
   }
 });
 
@@ -5285,6 +5468,7 @@ app.get('/api/assessment-attainment-levels', async (request, response) => {
   const academicYear = request.query.academic_year || '2024-25';
   const assessmentCategory =
     request.query.assessment_category || 'Internal & External Assessment';
+  const allYears = request.query.all_years === 'true';
 
   try {
     await ensureAssessmentAttainmentLevelsTable();
@@ -5302,11 +5486,11 @@ app.get('/api/assessment-attainment-levels', async (request, response) => {
           condition_text,
           remarks
         FROM assessment_attainment_levels
-        WHERE academic_year = $1
-          AND assessment_category = $2
-        ORDER BY level_number ASC
+        WHERE assessment_category = $1
+          ${allYears ? '' : 'AND academic_year = $2'}
+        ORDER BY academic_year ASC, level_number ASC
       `,
-      [academicYear, assessmentCategory],
+      allYears ? [assessmentCategory] : [assessmentCategory, academicYear],
     );
 
     response.json(result.rows);
