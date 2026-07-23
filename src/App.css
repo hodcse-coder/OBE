@@ -373,10 +373,110 @@
   height: 38px;
   padding: 0 12px;
   border-radius: 8px;
-  background: #0f766e;
+  background: #dc2626;
   color: #ffffff;
   font-size: 15px;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.general-information-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 6px;
+  border: 1px solid #dce3ec;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.general-information-tabs button {
+  flex: 1;
+  min-height: 42px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.general-information-tabs button:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.general-information-tabs button.active {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.setting-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 6px;
+  overflow-x: auto;
+  border: 1px solid #dce3ec;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.setting-tabs button {
+  flex: 1 0 auto;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.setting-tabs button:hover {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.setting-tabs button.active {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.faculty-setting-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.faculty-setting-tabs button {
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid #dc2626;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #b91c1c;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.faculty-setting-tabs button.active {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.obe-attainment-tabs {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.obe-attainment-tabs button {
+  flex: 0 0 auto;
   white-space: nowrap;
 }
 
@@ -585,6 +685,12 @@
 }
 
 .view-only-workspace button:not(.change-password-button) {
+  pointer-events: none;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.view-only-workspace .file-action {
   pointer-events: none;
   opacity: 0.45;
   cursor: not-allowed;
@@ -1044,6 +1150,7 @@
 }
 
 .save-button:disabled,
+.action-button:disabled,
 .row-actions button:disabled,
 .file-action.disabled {
   cursor: not-allowed;

@@ -822,6 +822,10 @@ function hashPassword(password) {
 
 const defaultModules = [
   'Dashboard',
+  'General Information',
+  'Setting',
+  'OBE Setting',
+  'Access Control',
   'Departments',
   'Department Vision and Mission',
   'Programmes',
@@ -839,8 +843,8 @@ const defaultModules = [
   'Articulation Matrix',
   'Mark Attainment',
   'CO Attainment Calculation',
-  'CO-PO Attainment',
-  'CO-PSO Attainment',
+  'PO Attainment',
+  'PSO Attainment',
   'Faculty',
   'Add Faculty',
   'Import Faculty',
@@ -893,8 +897,8 @@ function parentModule(moduleName) {
     'Articulation Matrix',
     'Mark Attainment',
     'CO Attainment Calculation',
-    'CO-PO Attainment',
-    'CO-PSO Attainment',
+    'PO Attainment',
+    'PSO Attainment',
   ].includes(moduleName)) {
     return 'Attainment';
   }
@@ -1155,6 +1159,24 @@ async function ensureAuthTables() {
       AND NOT EXISTS (
         SELECT 1 FROM modules AS renamed_module
         WHERE renamed_module.module_name = 'PO/PSO/PEO'
+      )
+  `);
+  await pool.query(`
+    UPDATE modules
+    SET module_name = 'PO Attainment'
+    WHERE module_name = 'CO-PO Attainment'
+      AND NOT EXISTS (
+        SELECT 1 FROM modules AS renamed_module
+        WHERE renamed_module.module_name = 'PO Attainment'
+      )
+  `);
+  await pool.query(`
+    UPDATE modules
+    SET module_name = 'PSO Attainment'
+    WHERE module_name = 'CO-PSO Attainment'
+      AND NOT EXISTS (
+        SELECT 1 FROM modules AS renamed_module
+        WHERE renamed_module.module_name = 'PSO Attainment'
       )
   `);
   await pool.query(`
@@ -5166,11 +5188,11 @@ app.post('/api/co-po-attainment', async (request, response) => {
     );
 
     response.status(201).json({
-      message: 'CO-PO Attainment saved.',
+      message: 'PO Attainment saved.',
       co_po_attainment_id: result.rows[0].co_po_attainment_id,
     });
   } catch (error) {
-    response.status(400).json({ error: 'Unable to save CO-PO Attainment.', detail: error.message });
+    response.status(400).json({ error: 'Unable to save PO Attainment.', detail: error.message });
   }
 });
 
@@ -5214,11 +5236,11 @@ app.post('/api/co-pso-attainment', async (request, response) => {
       ],
     );
     response.status(201).json({
-      message: 'CO-PSO Attainment saved.',
+      message: 'PSO Attainment saved.',
       co_pso_attainment_id: result.rows[0].co_pso_attainment_id,
     });
   } catch (error) {
-    response.status(400).json({ error: 'Unable to save CO-PSO Attainment.', detail: error.message });
+    response.status(400).json({ error: 'Unable to save PSO Attainment.', detail: error.message });
   }
 });
 

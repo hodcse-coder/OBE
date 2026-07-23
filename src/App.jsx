@@ -8,68 +8,13 @@ import './App.css'
 
 const menuItems = [
   { icon: '\u{1F3E0}', label: 'Dashboard', metric: 'Overview' },
-  { icon: '\u{1F393}', label: 'Departments', metric: '12 active' },
-  { icon: '\u{1F441}', label: 'Department Vision and Mission', metric: 'Department direction' },
-  { icon: '\u{1F4DA}', label: 'Programmes', metric: '28 mapped' },
-  { icon: '\u{1F4C5}', label: 'Admission Batch Management', metric: 'Admission batches' },
-  { icon: '\u{1F5D3}', label: 'Semester', metric: 'Academic terms' },
-  { icon: '\u{1F4D6}', label: 'Courses', metric: '412 courses' },
-  { icon: '\u{1F4DD}', label: 'Set Target', metric: '96 planned' },
-  { icon: '\u{1F3AF}', label: 'Course Outcomes', metric: '1,846 COs' },
-  { icon: '\u{1F3C6}', label: 'PO/PSO/PEO', metric: 'NBA aligned' },
-  { icon: '\u{1F517}', label: 'CO-PO Mapping', metric: '78% complete' },
-  { icon: '\u{1F4CB}', label: 'University Mapping Question', metric: 'External exam' },
-  { icon: '\u{1F4E4}', label: 'External Mark Upload', metric: 'External marks' },
-  { icon: '\u{1F4E5}', label: 'Internal Mark Upload', metric: 'Internal marks' },
-  {
-    icon: '\u{1F4CA}',
-    label: 'Attainment',
-    metric: 'Outcome analysis',
-    children: [
-      { icon: '\u{1F9E9}', label: 'Articulation Matrix', metric: 'Matrix' },
-      { icon: '\u{1F4DD}', label: 'Mark Attainment', metric: 'Marks' },
-      { icon: '\u{1F4CA}', label: 'CO Attainment Calculation', metric: 'Current cycle' },
-      { icon: '\u{1F517}', label: 'CO-PO Attainment', metric: 'PO linked' },
-      { icon: '\u{1F3AF}', label: 'CO-PSO Attainment', metric: 'PSO linked' },
-    ],
-  },
-  {
-    icon: '\u{1F468}\u200D\u{1F3EB}',
-    label: 'Faculty',
-    metric: '148 users',
-    children: [
-      { icon: '\u2795', label: 'Add Faculty', metric: 'New faculty' },
-      { icon: '\u{1F4E5}', label: 'Import Faculty', metric: 'Bulk import' },
-    ],
-  },
-  {
-    icon: '\u{1F468}\u200D\u{1F393}',
-    label: 'Students',
-    metric: '4,820 records',
-    children: [
-      { icon: '\u{1F4E5}', label: 'Import Student', metric: 'Bulk import' },
-      { icon: '\u{1F517}', label: 'Student Course Faculty Mapping', metric: 'Course mapping' },
-    ],
-  },
-  {
-    icon: '\u{1F4C4}',
-    label: 'Report',
-    metric: 'Reports',
-    children: [
-      { icon: '\u{1F3EB}', label: 'All Departments', metric: 'All students' },
-      { icon: '\u{1F500}', label: 'Department Wise', metric: 'By department' },
-      { icon: '\u{1F4D6}', label: 'Course Wise', metric: 'By course' },
-    ],
-  },
+  { icon: '\u2139\uFE0F', label: 'General Information', metric: 'Institute details' },
+  { icon: '\u2699\uFE0F', label: 'Setting', metric: 'Configuration' },
+  { icon: '\u{1F3AF}', label: 'OBE Setting', metric: 'OBE configuration' },
   {
     icon: '\u2699',
-    label: 'Settings',
+    label: 'Access Control',
     metric: 'Admin',
-    children: [
-      { icon: '\u{1F510}', label: 'Faculty Login Mapping', metric: 'Login access' },
-      { icon: '\u{1F6E1}', label: 'Faculty Permission Management', metric: 'Permissions' },
-      { icon: '\u{1F4DA}', label: 'Assigned Courses', metric: 'Faculty courses' },
-    ],
   },
 ]
 
@@ -79,8 +24,29 @@ const allMenuLabels = flatMenuItems.map((item) => item.label)
 function expandAllowedModules(allowedModules) {
   const allowed = new Set(allowedModules || [])
 
+  const groupedModules = {
+    'General Information': ['Department Vision and Mission'],
+    Setting: ['Departments', 'Programmes', 'Admission Batch Management', 'Semester', 'Courses', 'Faculty', 'Add Faculty', 'Import Faculty', 'Students', 'Import Student', 'Student Course Faculty Mapping'],
+    'OBE Setting': ['Set Target', 'Course Outcomes', 'PO/PSO/PEO', 'CO-PO Mapping', 'University Mapping Question', 'External Mark Upload', 'Internal Mark Upload', 'Attainment', 'Articulation Matrix', 'Mark Attainment', 'CO Attainment Calculation', 'CO-PO Attainment', 'PO Attainment', 'CO-PSO Attainment', 'PSO Attainment'],
+    'Access Control': ['Settings', 'Faculty Login Mapping', 'Faculty Permission Management', 'Assigned Courses'],
+  }
+
+  Object.entries(groupedModules).forEach(([group, modules]) => {
+    if (modules.some((module) => allowed.has(module))) {
+      allowed.add(group)
+    }
+  })
+
   if (allowed.has('PO / PSO')) {
     allowed.add('PO/PSO/PEO')
+  }
+
+  if (allowed.has('CO-PO Attainment')) {
+    allowed.add('PO Attainment')
+  }
+
+  if (allowed.has('CO-PSO Attainment')) {
+    allowed.add('PSO Attainment')
   }
 
   menuItems.forEach((item) => {
@@ -482,7 +448,7 @@ function LoginPage({ onLogin }) {
   )
 }
 
-function DepartmentsPage() {
+function DepartmentsPage({ disableAddButton = false }) {
   const [departments, setDepartments] = useState([])
   const [formData, setFormData] = useState(emptyDepartment)
   const [editingId, setEditingId] = useState(null)
@@ -614,7 +580,7 @@ function DepartmentsPage() {
           <p className="eyebrow">Department Management</p>
           <h3>Departments</h3>
         </div>
-        <button type="button" className="action-button" onClick={openAddForm}>
+        <button type="button" className="action-button" onClick={openAddForm} disabled={disableAddButton}>
           + Add New Department
         </button>
       </div>
@@ -769,7 +735,7 @@ function DepartmentsPage() {
   )
 }
 
-function ProgrammesPage() {
+function ProgrammesPage({ disableAddButton = false }) {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [formData, setFormData] = useState(emptyProgramme)
@@ -923,7 +889,7 @@ function ProgrammesPage() {
           <p className="eyebrow">Programme Management</p>
           <h3>Programmes</h3>
         </div>
-        <button type="button" className="action-button" onClick={openAddForm}>
+        <button type="button" className="action-button" onClick={openAddForm} disabled={disableAddButton}>
           + Add New Programme
         </button>
       </div>
@@ -1109,7 +1075,7 @@ function ProgrammesPage() {
   )
 }
 
-function AdmissionBatchManagementPage() {
+function AdmissionBatchManagementPage({ disableAddButton = false }) {
   const initialForm = { department_id: '', programme_id: '', starting_academic_year: '2024-25', admission_year: '2024', status: 'Active' }
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
@@ -1272,7 +1238,7 @@ function AdmissionBatchManagementPage() {
 
   return (
     <section className="department-page">
-      <div className="section-title"><div><p className="eyebrow">Admission Batch Management</p><h3>Admission Batch</h3></div>{!isFormVisible && <button type="button" className="save-button" onClick={() => setIsFormVisible(true)}>+ Add New Admission Batch</button>}</div>
+      <div className="section-title"><div><p className="eyebrow">Admission Batch Management</p><h3>Admission Batch</h3></div>{!isFormVisible && <button type="button" className="save-button" onClick={() => setIsFormVisible(true)} disabled={disableAddButton}>+ Add New Admission Batch</button>}</div>
       {isFormVisible && <div className="department-form student-master-form">
         <label><span>Department</span><select name="department_id" value={form.department_id} onChange={updateForm}><option value="">Select Department</option>{departments.map((row) => <option key={row.department_id} value={row.department_id}>{row.department_name}</option>)}</select></label>
         <label><span>Programme</span><select name="programme_id" value={form.programme_id} onChange={updateForm}><option value="">Select Programme</option>{filteredProgrammes.map((row) => <option key={row.programme_id} value={row.programme_id}>{row.programme_name}</option>)}</select></label>
@@ -1291,7 +1257,7 @@ function AdmissionBatchManagementPage() {
   )
 }
 
-function SemestersPage() {
+function SemestersPage({ disableAddButton = false }) {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [semesters, setSemesters] = useState([])
@@ -1542,7 +1508,7 @@ function SemestersPage() {
           <p className="eyebrow">Semester Management</p>
           <h3>Semester</h3>
         </div>
-        <button type="button" className="action-button" onClick={openAddForm}>
+        <button type="button" className="action-button" onClick={openAddForm} disabled={disableAddButton}>
           + Add New Semester
         </button>
       </div>
@@ -1720,7 +1686,7 @@ function SemestersPage() {
   )
 }
 
-function CoursesPage() {
+function CoursesPage({ disableAddButton = false }) {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [semesters, setSemesters] = useState([])
@@ -1945,7 +1911,7 @@ function CoursesPage() {
           <p className="eyebrow">Course Management</p>
           <h3>Courses</h3>
         </div>
-        <button type="button" className="action-button" onClick={openAddForm}>
+        <button type="button" className="action-button" onClick={openAddForm} disabled={disableAddButton}>
           + Add New Course
         </button>
       </div>
@@ -3424,7 +3390,7 @@ function SubjectWiseReportPage({ reportName = 'Course Wise', user }) {
   </section>
 }
 
-function DashboardPage({ user }) {
+function DashboardPage({ user, showOverview = true }) {
   const [departments, setDepartments] = useState([])
   const [programmes, setProgrammes] = useState([])
   const [courses, setCourses] = useState([])
@@ -3606,32 +3572,34 @@ function DashboardPage({ user }) {
 
   return (
     <section className="department-page">
-      <div className="dashboard-heading">
-        <h3>Ajay Binay Institute of Technology (Autonomous)</h3>
-        {user?.role !== 'Admin' && <button type="button" className="action-button change-password-button" onClick={() => setShowPasswordForm((current) => !current)}>Change Password</button>}
-      </div>
+      {showOverview && <>
+        <div className="dashboard-heading">
+          <h3>Ajay Binay Institute of Technology (Autonomous)</h3>
+          {user?.role !== 'Admin' && <button type="button" className="action-button change-password-button" onClick={() => setShowPasswordForm((current) => !current)}>Change Password</button>}
+        </div>
 
-      {showPasswordForm && <form className="password-change-form" onSubmit={changePassword}>
-        <label><span>New Password</span><input type="password" value={passwordForm.new_password} onChange={(event) => setPasswordForm((current) => ({ ...current, new_password: event.target.value }))} required minLength="6" /></label>
-        <label><span>Confirm Password</span><input type="password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm((current) => ({ ...current, confirm_password: event.target.value }))} required minLength="6" /></label>
-        <button type="submit" className="save-button change-password-button" disabled={isChangingPassword}>{isChangingPassword ? 'Changing...' : 'Save Password'}</button>
-      </form>}
-      {passwordMessage && <div className="notice success">{passwordMessage}</div>}
+        {showPasswordForm && <form className="password-change-form" onSubmit={changePassword}>
+          <label><span>New Password</span><input type="password" value={passwordForm.new_password} onChange={(event) => setPasswordForm((current) => ({ ...current, new_password: event.target.value }))} required minLength="6" /></label>
+          <label><span>Confirm Password</span><input type="password" value={passwordForm.confirm_password} onChange={(event) => setPasswordForm((current) => ({ ...current, confirm_password: event.target.value }))} required minLength="6" /></label>
+          <button type="submit" className="save-button change-password-button" disabled={isChangingPassword}>{isChangingPassword ? 'Changing...' : 'Save Password'}</button>
+        </form>}
+        {passwordMessage && <div className="notice success">{passwordMessage}</div>}
+      </>}
 
       {error && <div className="notice error">{error}</div>}
 
-      <section className="summary-band" aria-label="Dashboard summary">
+      {showOverview && <section className="summary-band" aria-label="Dashboard summary">
         {dashboardCards.map((card) => (
           <article className="summary-card dashboard-card" key={card.label}>
             <span>{card.label}</span>
             <strong>{isLoading ? '...' : card.value}</strong>
           </article>
         ))}
-      </section>
+      </section>}
 
-      <section className="vision-mission-panel" aria-label="Institution vision and mission">
+      {!showOverview && <section className="vision-mission-panel" aria-label="Institution vision and mission">
         <article className="vision-mission-content-card">
-          <h4>Our Vision</h4>
+          <h4>Institute Vision</h4>
           <p>{visionContent?.content_statement || 'Upload the Vision Excel file to display the statement.'}</p>
           <div className="vision-mission-actions">
             <button type="button" className="save-button" onClick={() => downloadVisionMissionFormat('VISION')} disabled={isDashboardActionsDisabled}>Vision Excel Format</button>
@@ -3643,7 +3611,7 @@ function DashboardPage({ user }) {
         </article>
         <img src={visionMissionImage} alt="Vision and Mission" />
         <article className="vision-mission-content-card">
-          <h4>Our Mission</h4>
+          <h4>Institute Mission</h4>
           <p>{missionContent?.content_statement || 'Upload the Mission Excel file to display the statement.'}</p>
           <div className="vision-mission-actions">
             <button type="button" className="save-button" onClick={() => downloadVisionMissionFormat('MISSION')} disabled={isDashboardActionsDisabled}>Mission Excel Format</button>
@@ -3653,7 +3621,313 @@ function DashboardPage({ user }) {
             </label>
           </div>
         </article>
-      </section>
+      </section>}
+    </section>
+  )
+}
+
+function GeneralInformationPage({ user, allowedModules = [] }) {
+  const [activeTab, setActiveTab] = useState('Institute Vision')
+  const isAdmin = user?.role === 'Admin'
+  const hasGroupAccess = isAdmin || allowedModules.includes('General Information')
+  const tabs = [
+    { label: 'Institute Vision', modules: ['General Information'] },
+    { label: 'Department Vision', modules: ['Department Vision and Mission'] },
+  ].filter((tab) => hasGroupAccess || tab.modules.some((module) => allowedModules.includes(module)))
+  const selectedTab = tabs.some((tab) => tab.label === activeTab) ? activeTab : tabs[0]?.label
+
+  return (
+    <section className="general-information-page">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">General Information</p>
+          <h3>Vision and Mission</h3>
+        </div>
+      </div>
+
+      <div className="general-information-tabs" role="tablist" aria-label="General Information sections">
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            role="tab"
+            key={tab.label}
+            className={selectedTab === tab.label ? 'active' : ''}
+            aria-selected={selectedTab === tab.label}
+            onClick={() => setActiveTab(tab.label)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="general-information-tab-panel" role="tabpanel">
+        {selectedTab === 'Institute Vision' ? (
+          <DashboardPage user={user} showOverview={false} />
+        ) : (
+          <DepartmentVisionMissionPage user={user} />
+        )}
+      </div>
+    </section>
+  )
+}
+
+function SettingPage({ user, allowedModules = [], permissions = [] }) {
+  const [activeTab, setActiveTab] = useState('Departments')
+  const [activeFacultyTab, setActiveFacultyTab] = useState('Add Faculty')
+  const hasGroupAccess = user?.role === 'Admin' || allowedModules.includes('Setting')
+  const tabs = [
+    { label: 'Departments', modules: ['Departments'] },
+    { label: 'Programmes', modules: ['Programmes'] },
+    { label: 'Admission Batch', modules: ['Admission Batch Management'] },
+    { label: 'Semesters', modules: ['Semester'] },
+    { label: 'Courses', modules: ['Courses'] },
+    { label: 'Faculty', modules: ['Faculty', 'Add Faculty', 'Import Faculty'] },
+    { label: 'Student', modules: ['Students', 'Import Student', 'Student Course Faculty Mapping'] },
+  ].filter((tab) => hasGroupAccess || tab.modules.some((module) => allowedModules.includes(module)))
+  const selectedTab = tabs.some((tab) => tab.label === activeTab) ? activeTab : tabs[0]?.label
+  const facultyTabs = [
+    { label: 'Add Faculty', modules: ['Faculty', 'Add Faculty'] },
+    { label: 'Import Faculty', modules: ['Faculty', 'Import Faculty'] },
+  ].filter((tab) => hasGroupAccess || tab.modules.some((module) => allowedModules.includes(module)))
+  const selectedFacultyTab = facultyTabs.some((tab) => tab.label === activeFacultyTab) ? activeFacultyTab : facultyTabs[0]?.label
+  const permissionModuleByTab = {
+    Departments: 'Departments',
+    Programmes: 'Programmes',
+    'Admission Batch': 'Admission Batch Management',
+    Semesters: 'Semester',
+    Courses: 'Courses',
+    Faculty: selectedFacultyTab || 'Faculty',
+    Student: 'Import Student',
+  }
+  const selectedPermissionModule = permissionModuleByTab[selectedTab]
+  const selectedPermission = permissions.find((row) => row.module_name === selectedPermissionModule)
+    || (selectedTab === 'Faculty' ? permissions.find((row) => row.module_name === 'Faculty') : null)
+    || (selectedTab === 'Student' ? permissions.find((row) => row.module_name === 'Students') : null)
+  const isSelectedTabViewOnly = user?.role !== 'Admin' && (!selectedPermission
+    || (Boolean(selectedPermission.can_view)
+      && !['can_create', 'can_edit', 'can_delete', 'can_upload', 'can_calculate', 'can_export']
+        .some((key) => Boolean(selectedPermission[key]))))
+
+  function renderTabContent() {
+    switch (selectedTab) {
+      case 'Programmes':
+        return <ProgrammesPage />
+      case 'Admission Batch':
+        return <AdmissionBatchManagementPage />
+      case 'Semesters':
+        return <SemestersPage />
+      case 'Courses':
+        return <CoursesPage />
+      case 'Faculty':
+        return (
+          <div className="faculty-setting-section">
+            <div className="faculty-setting-tabs" role="tablist" aria-label="Faculty sections">
+              {facultyTabs.map((tab) => (
+                <button
+                  type="button"
+                  role="tab"
+                  key={tab.label}
+                  className={selectedFacultyTab === tab.label ? 'active' : ''}
+                  aria-selected={selectedFacultyTab === tab.label}
+                  onClick={() => setActiveFacultyTab(tab.label)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {selectedFacultyTab === 'Import Faculty' ? <ImportFacultyPage /> : <AddFacultyPage />}
+          </div>
+        )
+      case 'Student':
+        return <StudentMasterPage />
+      default:
+        return <DepartmentsPage />
+    }
+  }
+
+  return (
+    <section className="setting-page">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">Setting</p>
+          <h3>Master Configuration</h3>
+        </div>
+      </div>
+
+      <div className="setting-tabs" role="tablist" aria-label="Setting sections">
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            role="tab"
+            key={tab.label}
+            className={selectedTab === tab.label ? 'active' : ''}
+            aria-selected={selectedTab === tab.label}
+            onClick={() => setActiveTab(tab.label)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className={`setting-tab-panel ${isSelectedTabViewOnly ? 'view-only-workspace' : ''}`} role="tabpanel">
+        {renderTabContent()}
+      </div>
+    </section>
+  )
+}
+
+function AccessControlPage({ user, allowedModules = [] }) {
+  const [activeTab, setActiveTab] = useState('Faculty Login Mapping')
+  const hasGroupAccess = user?.role === 'Admin' || allowedModules.includes('Access Control')
+  const tabs = ['Faculty Login Mapping', 'Faculty Permission Management', 'Assigned Courses']
+    .filter((tab) => hasGroupAccess || allowedModules.includes(tab))
+  const selectedTab = tabs.includes(activeTab) ? activeTab : tabs[0]
+
+  function renderTabContent() {
+    if (selectedTab === 'Faculty Permission Management') {
+      return <FacultyPermissionManagementPage />
+    }
+    if (selectedTab === 'Assigned Courses') {
+      return <AssignedCoursesPage />
+    }
+    return <FacultyLoginMappingPage />
+  }
+
+  return (
+    <section className="access-control-page">
+      <div className="section-title">
+        <div>
+          <p className="eyebrow">Access Control</p>
+          <h3>User Access Management</h3>
+        </div>
+      </div>
+
+      <div className="setting-tabs" role="tablist" aria-label="Access Control sections">
+        {tabs.map((tab) => (
+          <button
+            type="button"
+            role="tab"
+            key={tab}
+            className={selectedTab === tab ? 'active' : ''}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      <div className="access-control-tab-panel" role="tabpanel">
+        {renderTabContent()}
+      </div>
+    </section>
+  )
+}
+
+function ObeSettingPage({ user, allowedModules = [], permissions = [] }) {
+  const [activeTab, setActiveTab] = useState('Set Target')
+  const [activeAttainmentTab, setActiveAttainmentTab] = useState('Articulation Matrix')
+  const hasGroupAccess = user?.role === 'Admin' || allowedModules.includes('OBE Setting')
+  const tabs = [
+    { label: 'Set Target', modules: ['Set Target'] },
+    { label: 'Course Outcomes', modules: ['Course Outcomes'] },
+    { label: 'PO/PSO/PEO', modules: ['PO/PSO/PEO', 'PO / PSO'] },
+    { label: 'CO-PO Mapping', modules: ['CO-PO Mapping'] },
+    { label: 'University Mapping', modules: ['University Mapping Question'] },
+    { label: 'External Mark Upload', modules: ['External Mark Upload'] },
+    { label: 'Internal Mark Upload', modules: ['Internal Mark Upload'] },
+    { label: 'Attainment', modules: ['Attainment', 'Articulation Matrix', 'Mark Attainment', 'CO Attainment Calculation', 'CO-PO Attainment', 'PO Attainment', 'CO-PSO Attainment', 'PSO Attainment'] },
+  ].filter((tab) => hasGroupAccess || tab.modules.some((module) => allowedModules.includes(module)))
+  const selectedTab = tabs.some((tab) => tab.label === activeTab) ? activeTab : tabs[0]?.label
+  const attainmentTabs = [
+    { label: 'Articulation Matrix', modules: ['Attainment', 'Articulation Matrix'] },
+    { label: 'Mark Attainment', modules: ['Attainment', 'Mark Attainment'] },
+    { label: 'CO Attainment Calculation', modules: ['Attainment', 'CO Attainment Calculation'] },
+    { label: 'PO Attainment', modules: ['Attainment', 'CO-PO Attainment', 'PO Attainment'] },
+    { label: 'PSO Attainment', modules: ['Attainment', 'CO-PSO Attainment', 'PSO Attainment'] },
+  ].filter((tab) => hasGroupAccess || tab.modules.some((module) => allowedModules.includes(module)))
+  const selectedAttainmentTab = attainmentTabs.some((tab) => tab.label === activeAttainmentTab) ? activeAttainmentTab : attainmentTabs[0]?.label
+  const permissionModuleByTab = {
+    'Set Target': 'Set Target',
+    'Course Outcomes': 'Course Outcomes',
+    'PO/PSO/PEO': 'PO/PSO/PEO',
+    'CO-PO Mapping': 'CO-PO Mapping',
+    'University Mapping': 'University Mapping Question',
+    'External Mark Upload': 'External Mark Upload',
+    'Internal Mark Upload': 'Internal Mark Upload',
+    Attainment: selectedAttainmentTab,
+  }
+  const selectedPermissionModule = permissionModuleByTab[selectedTab]
+  const legacyPermissionModule = selectedPermissionModule === 'PO Attainment'
+    ? 'CO-PO Attainment'
+    : selectedPermissionModule === 'PSO Attainment' ? 'CO-PSO Attainment' : null
+  const selectedPermission = permissions.find((row) => row.module_name === selectedPermissionModule)
+    || (legacyPermissionModule ? permissions.find((row) => row.module_name === legacyPermissionModule) : null)
+    || (selectedTab === 'Attainment' ? permissions.find((row) => row.module_name === 'Attainment') : null)
+  const isSelectedTabViewOnly = user?.role !== 'Admin' && (!selectedPermission
+    || (Boolean(selectedPermission.can_view)
+      && !['can_create', 'can_edit', 'can_delete', 'can_upload', 'can_calculate', 'can_export']
+        .some((key) => Boolean(selectedPermission[key]))))
+
+  function renderAttainmentContent() {
+    switch (selectedAttainmentTab) {
+      case 'Mark Attainment':
+        return <MarkAttainmentPage />
+      case 'CO Attainment Calculation':
+        return <CoAttainmentCalculationPage />
+      case 'PO Attainment':
+        return <CoPoAttainmentPage />
+      case 'PSO Attainment':
+        return <CoPsoAttainmentPage />
+      default:
+        return <ArticulationMatrixPage />
+    }
+  }
+
+  function renderTabContent() {
+    switch (selectedTab) {
+      case 'Course Outcomes':
+        return <CourseOutcomesPage />
+      case 'PO/PSO/PEO':
+        return <ProgrammeOutcomesPage user={user} />
+      case 'CO-PO Mapping':
+        return <CoPoMappingPage user={user} />
+      case 'University Mapping':
+        return <UniversityMappingQuestionPage user={user} />
+      case 'External Mark Upload':
+        return <ExternalMarkUploadPage />
+      case 'Internal Mark Upload':
+        return <InternalMarkUploadPage />
+      case 'Attainment':
+        return (
+          <div className="obe-attainment-section">
+            <div className="faculty-setting-tabs obe-attainment-tabs" role="tablist" aria-label="Attainment sections">
+              {attainmentTabs.map((tab) => (
+                <button type="button" role="tab" key={tab.label} className={selectedAttainmentTab === tab.label ? 'active' : ''} aria-selected={selectedAttainmentTab === tab.label} onClick={() => setActiveAttainmentTab(tab.label)}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {renderAttainmentContent()}
+          </div>
+        )
+      default:
+        return <AssessmentsPage />
+    }
+  }
+
+  return (
+    <section className="obe-setting-page">
+      <div className="section-title">
+        <div><p className="eyebrow">OBE Setting</p><h3>Outcome-Based Education Configuration</h3></div>
+      </div>
+      <div className="setting-tabs" role="tablist" aria-label="OBE Setting sections">
+        {tabs.map((tab) => (
+          <button type="button" role="tab" key={tab.label} className={selectedTab === tab.label ? 'active' : ''} aria-selected={selectedTab === tab.label} onClick={() => setActiveTab(tab.label)}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className={`obe-setting-tab-panel ${isSelectedTabViewOnly ? 'view-only-workspace' : ''}`} role="tabpanel">{renderTabContent()}</div>
     </section>
   )
 }
@@ -5096,8 +5370,8 @@ function CoPoAttainmentPage() {
         }),
       })
       const data = await readResponseJson(response)
-      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to save CO-PO Attainment.')
-      setMessage(data?.message || 'CO-PO Attainment saved.')
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to save PO Attainment.')
+      setMessage(data?.message || 'PO Attainment saved.')
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -5108,7 +5382,7 @@ function CoPoAttainmentPage() {
   return (
     <section className="page-section">
       <div className="section-title">
-        <div><span>Attainment</span><h3>CO-PO Attainment</h3></div>
+        <div><span>Attainment</span><h3>PO Attainment</h3></div>
         <button type="button" className="save-button" onClick={saveAttainment} disabled={isSaving}>
           {isSaving ? 'Saving...' : 'Save'}
         </button>
@@ -5390,8 +5664,8 @@ function CoPsoAttainmentPage() {
         }),
       })
       const data = await readResponseJson(response)
-      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to save CO-PSO Attainment.')
-      setMessage(data?.message || 'CO-PSO Attainment saved.')
+      if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to save PSO Attainment.')
+      setMessage(data?.message || 'PSO Attainment saved.')
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -9961,7 +10235,7 @@ function FacultyPermissionManagementPage() {
       .then(async (response) => {
         const data = await readResponseJson(response)
         if (!response.ok) throw new Error(data?.detail || data?.error || 'Unable to load permissions.')
-        setPermissions((data || []).filter((row) => !['gap analysis', 'nba reports'].includes(String(row.module_name || '').trim().toLowerCase())))
+        setPermissions((data || []).filter((row) => !['gap analysis', 'nba reports', 'report'].includes(String(row.module_name || '').trim().toLowerCase())))
       })
       .catch((loadError) => setError(loadError.message))
       .finally(() => setIsLoading(false))
@@ -10304,7 +10578,15 @@ function App() {
       </aside>
 
       <section className={`workspace ${isViewOnly ? 'view-only-workspace' : ''}`}>
-        {activeItem === 'Departments' ? (
+        {activeItem === 'General Information' ? (
+          <GeneralInformationPage user={auth.user} allowedModules={auth.modules || []} />
+        ) : activeItem === 'Setting' ? (
+          <SettingPage user={auth.user} allowedModules={auth.modules || []} permissions={auth.permissions || []} />
+        ) : activeItem === 'OBE Setting' ? (
+          <ObeSettingPage user={auth.user} allowedModules={auth.modules || []} permissions={auth.permissions || []} />
+        ) : activeItem === 'Access Control' ? (
+          <AccessControlPage user={auth.user} allowedModules={auth.modules || []} />
+        ) : activeItem === 'Departments' ? (
           <DepartmentsPage />
         ) : activeItem === 'Department Vision and Mission' ? (
           <DepartmentVisionMissionPage user={auth.user} />
@@ -10324,9 +10606,9 @@ function App() {
           <ProgrammeOutcomesPage user={auth.user} />
         ) : activeItem === 'CO-PO Mapping' ? (
           <CoPoMappingPage user={auth.user} />
-        ) : activeItem === 'CO-PO Attainment' ? (
+        ) : activeItem === 'PO Attainment' ? (
           <CoPoAttainmentPage />
-        ) : activeItem === 'CO-PSO Attainment' ? (
+        ) : activeItem === 'PSO Attainment' ? (
           <CoPsoAttainmentPage />
         ) : activeItem === 'Articulation Matrix' ? (
           <ArticulationMatrixPage />
